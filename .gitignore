@@ -1,0 +1,24 @@
+# Build
+build/
+compile_commands.json
+
+# Logs
+*.log
+
+# Debug output
+mat/
+vec/
+
+# Editor
+.vscode/
+
+# C/C++ artifacts
+*.o
+*.a
+*.so
+*.dylib
+*.exe
+
+# Core dumps
+core
+core.*

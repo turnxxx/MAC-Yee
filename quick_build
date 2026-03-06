@@ -1,0 +1,3 @@
+#!/bin/bash
+cmake -S /home/JTZ_DL/MAC-Yee -B /home/JTZ_DL/MAC-Yee/build -DDUAL_MAC_ENABLE_DEBUG_LOG=OFF
+cmake --build /home/JTZ_DL/MAC-Yee/build -j

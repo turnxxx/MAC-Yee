@@ -1,0 +1,3 @@
+#!/bin/bash
+export PETSC_DIR=/home/JTZ_DL/petsc-3.23.0
+export PETSC_ARCH=x86_64

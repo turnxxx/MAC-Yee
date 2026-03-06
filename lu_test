@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+MPI_LAUNCHER="/home/JTZ_DL/petsc-3.23.0/x86_64/bin/mpirun"
+
+"${MPI_LAUNCHER}" -np 4 /home/JTZ_DL/MAC-Yee/build/DUAL_MAC_TEST \
+  -one_ksp_type preonly -one_pc_type lu \
+  -one_pc_factor_shift_type NONZERO \
+  -one_pc_factor_shift_amount 1e-12 \
+  -one_pc_factor_zeropivot 1e-14 \
+  -one_ksp_monitor_true_residual \
+   -one_ksp_converged_reason \
+   -one_ksp_view \
+  -two_ksp_type preonly -two_pc_type lu \
+  -two_pc_factor_shift_type NONZERO \
+  -two_pc_factor_shift_amount 1e-12 \
+  -two_pc_factor_zeropivot 1e-14 \
+  -two_ksp_monitor_true_residual \
+   -two_ksp_converged_reason \
+   -two_ksp_view \
+  -half_ksp_type preonly -half_pc_type lu \
+  -half_pc_factor_shift_type NONZERO \
+  -half_pc_factor_shift_amount 1e-12 \
+  -half_pc_factor_zeropivot 1e-14 \
+   > ./lu_test.log 2>&1
+#  -two_ksp_monitor_short -two_ksp_converged_reason \
+ # -two_ksp_error_if_not_converged -two_ksp_max_it 500 \
+ 
