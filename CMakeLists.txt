@@ -37,6 +37,7 @@ include_directories(
 # 设置C++标准
 set(CMAKE_CXX_STANDARD 17)#指定C++标准
 option(DUAL_MAC_ENABLE_DEBUG_LOG "Enable DUAL_MAC debug logs" OFF)
+option(DUAL_MAC_ENABLE_CONVECTION "Enable convective term assembly" ON)
 add_executable(DUAL_MAC ${SRC_LIST} )#指定可执行文件和源文件
 target_include_directories(DUAL_MAC PRIVATE
     ${HEAD_PATH}
@@ -44,6 +45,9 @@ target_include_directories(DUAL_MAC PRIVATE
 target_link_libraries(DUAL_MAC PRIVATE ${PETSC_DIR}/${PETSC_ARCH}/lib/libpetsc.so)
 if(DUAL_MAC_ENABLE_DEBUG_LOG)
     target_compile_definitions(DUAL_MAC PRIVATE DUAL_MAC_DEBUG=1)
+endif()
+if(NOT DUAL_MAC_ENABLE_CONVECTION)
+    target_compile_definitions(DUAL_MAC PRIVATE DUAL_MAC_ENABLE_CONVECTION=0)
 endif()
 
 # 测试可执行文件：包含 test/main.cpp，避免与 src/main.cpp 重复定义 main
@@ -60,6 +64,9 @@ target_link_libraries(DUAL_MAC_TEST PRIVATE ${PETSC_DIR}/${PETSC_ARCH}/lib/libpe
 if(DUAL_MAC_ENABLE_DEBUG_LOG)
     target_compile_definitions(DUAL_MAC_TEST PRIVATE DUAL_MAC_DEBUG=1)
 endif()
+if(NOT DUAL_MAC_ENABLE_CONVECTION)
+    target_compile_definitions(DUAL_MAC_TEST PRIVATE DUAL_MAC_ENABLE_CONVECTION=0)
+endif()
 
 # 收敛率测试可执行文件：使用 test/convergence_test.cpp
 add_executable(convergence_test
@@ -73,6 +80,9 @@ target_link_libraries(convergence_test PRIVATE ${PETSC_DIR}/${PETSC_ARCH}/lib/li
 if(DUAL_MAC_ENABLE_DEBUG_LOG)
     target_compile_definitions(convergence_test PRIVATE DUAL_MAC_DEBUG=1)
 endif()
+if(NOT DUAL_MAC_ENABLE_CONVECTION)
+    target_compile_definitions(convergence_test PRIVATE DUAL_MAC_ENABLE_CONVECTION=0)
+endif()
 
 add_executable(preserving
 ${CMAKE_CURRENT_SOURCE_DIR}/test/preserving.cpp
@@ -84,4 +94,7 @@ target_include_directories(preserving PRIVATE
 target_link_libraries(preserving PRIVATE ${PETSC_DIR}/${PETSC_ARCH}/lib/libpetsc.so)
 if(DUAL_MAC_ENABLE_DEBUG_LOG)
     target_compile_definitions(preserving PRIVATE DUAL_MAC_DEBUG=1)
+endif()
+if(NOT DUAL_MAC_ENABLE_CONVECTION)
+    target_compile_definitions(preserving PRIVATE DUAL_MAC_ENABLE_CONVECTION=0)
 endif()

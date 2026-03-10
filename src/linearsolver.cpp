@@ -988,12 +988,18 @@ static PetscErrorCode configure_fieldsplit_subksp_defaults(
       PetscCall(PCFieldSplitSetIS(subpc, "v", isVSub));
 
       {
-        Mat Pv = NULL;
-        PetscCall(build_velocity_schur_precond_mat(A, dm, &Pv));
-        if (Pv) {
-          PetscCall(
-              PCFieldSplitSetSchurPre(subpc, PC_FIELDSPLIT_SCHUR_PRE_USER, Pv));
-          PetscCall(MatDestroy(&Pv));
+        PetscBool vwSchurUser = PETSC_TRUE;
+        if (optionsPrefix && optionsPrefix[0] != '\0')
+          PetscCall(PetscOptionsGetBool(NULL, optionsPrefix, "-vw_schur_user",
+                                        &vwSchurUser, NULL));
+        if (vwSchurUser) {
+          Mat Pv = NULL;
+          PetscCall(build_velocity_schur_precond_mat(A, dm, &Pv));
+          if (Pv) {
+            PetscCall(PCFieldSplitSetSchurPre(subpc,
+                                              PC_FIELDSPLIT_SCHUR_PRE_USER, Pv));
+            PetscCall(MatDestroy(&Pv));
+          }
         }
       }
 

@@ -22,7 +22,7 @@ MPI_LAUNCHER="/home/JTZ_DL/petsc-3.23.0/x86_64/bin/mpirun"
 # - two_ 使用增广拉格朗日(augmented Lagrangian): gamma*grad_div 加入速度块
 #   Schur 补近似: S_p = -gamma * I
 
-"${MPI_LAUNCHER}" -np "${NP}" "${BIN}" \
+"${MPI_LAUNCHER}" -np "${NP}" "${BIN}" -nu 1e-6\
   \
   -one_ksp_type fgmres -one_pc_type fieldsplit \
   -one_pc_fieldsplit_type schur -one_pc_fieldsplit_schur_fact_type upper \
@@ -37,6 +37,8 @@ MPI_LAUNCHER="/home/JTZ_DL/petsc-3.23.0/x86_64/bin/mpirun"
   -one_fieldsplit_u_ksp_atol 1e-6\
   -one_fieldsplit_u_ksp_monitor \
   -one_fieldsplit_u_pc_fieldsplit_type schur \
+  -one_vw_schur_user false \
+  -one_fieldsplit_u_pc_fieldsplit_schur_precondition selfp \
   -one_fieldsplit_u_pc_fieldsplit_schur_fact_type upper \
   -one_fieldsplit_u_fieldsplit_v_ksp_type preonly \
   -one_fieldsplit_u_fieldsplit_v_pc_type lu \
@@ -49,11 +51,11 @@ MPI_LAUNCHER="/home/JTZ_DL/petsc-3.23.0/x86_64/bin/mpirun"
   -one_fieldsplit_u_fieldsplit_w_ksp_rtol 1e-6 \
   -one_fieldsplit_u_fieldsplit_w_ksp_atol 1e-6 \
   -one_fieldsplit_u_fieldsplit_w_ksp_monitor \
-  -one_ksp_rtol 1e-12 -one_ksp_atol 0 -one_ksp_max_it 200 \
+  -one_ksp_rtol 0 -one_ksp_atol 1e-8 -one_ksp_max_it 200 \
   -one_ksp_error_if_not_converged \
   \
   -two_ksp_type fgmres -two_pc_type fieldsplit \
-  -two_ksp_rtol 1e-12 -two_ksp_atol 0 -two_ksp_max_it 200 \
+  -two_ksp_rtol 1e-10 -two_ksp_atol 1e-8 -two_ksp_max_it 200 \
   -two_ksp_monitor \
   -two_pc_fieldsplit_type schur -two_pc_fieldsplit_schur_fact_type upper \
   -two_pc_fieldsplit_schur_precondition user \
@@ -62,16 +64,18 @@ MPI_LAUNCHER="/home/JTZ_DL/petsc-3.23.0/x86_64/bin/mpirun"
   -two_fieldsplit_p_ksp_atol 1e-6 \
   -two_fieldsplit_p_ksp_monitor \
   -two_fieldsplit_u_ksp_type fgmres -two_fieldsplit_u_pc_type fieldsplit \
-  -two_fieldsplit_u_ksp_rtol 1e-6 \
-  -two_fieldsplit_u_ksp_atol 1e-6 \
+  -two_vw_schur_user false \
+  -two_fieldsplit_u_pc_fieldsplit_schur_precondition selfp \
+  -two_fieldsplit_u_ksp_rtol 1e-3 \
+  -two_fieldsplit_u_ksp_atol 1e-3 \
   -two_fieldsplit_u_ksp_monitor \
   -two_fieldsplit_u_pc_fieldsplit_type schur \
   -two_fieldsplit_u_pc_fieldsplit_schur_fact_type upper \
   -two_fieldsplit_u_fieldsplit_v_ksp_type preonly\
   -two_fieldsplit_u_fieldsplit_v_pc_type lu \
- -two_fieldsplit_u_fieldsplit_v_pc_factor_mat_solver_type mumps \
-  -two_fieldsplit_u_fieldsplit_v_ksp_rtol 1e-6 \
-  -two_fieldsplit_u_fieldsplit_v_ksp_atol 1e-6 \
+  -two_fieldsplit_u_fieldsplit_v_pc_factor_mat_solver_type mumps \
+  -two_fieldsplit_u_fieldsplit_v_ksp_rtol 1e-3 \
+  -two_fieldsplit_u_fieldsplit_v_ksp_atol 1e-3 \
   -two_fieldsplit_u_fieldsplit_v_ksp_max_it 200 \
   -two_fieldsplit_u_fieldsplit_v_ksp_monitor \
   -two_fieldsplit_u_fieldsplit_w_ksp_type fgmres \

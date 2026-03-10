@@ -14,6 +14,109 @@
 #include <cstring>
 //#include"petscviewerascii.h"
 
+// omega2 = ∇_h × u1  (edge→face)
+// 使用与耦合方程 (5.5) 完全相同的离散旋度 stencil，
+// 保证初始涡量与时间推进中耦合方程强制的离散旋度一致。
+static PetscErrorCode
+compute_discrete_curl_edge_to_face(DM dm, Vec u1_global, Vec omega2_global,
+                                   PetscReal hx, PetscReal hy, PetscReal hz) {
+  PetscFunctionBeginUser;
+  PetscInt startx, starty, startz, nx, ny, nz;
+  PetscCall(DMStagGetCorners(dm, &startx, &starty, &startz, &nx, &ny, &nz, NULL,
+                             NULL, NULL));
+  Vec localU1;
+  PetscScalar ****arrU1;
+  PetscCall(DMGetLocalVector(dm, &localU1));
+  PetscCall(DMGlobalToLocal(dm, u1_global, INSERT_VALUES, localU1));
+  PetscCall(DMStagVecGetArrayRead(dm, localU1, &arrU1));
+
+  Vec localO2;
+  PetscScalar ****arrO2;
+  PetscCall(DMGetLocalVector(dm, &localO2));
+  PetscCall(VecZeroEntries(localO2));
+  PetscCall(DMStagVecGetArray(dm, localO2, &arrO2));
+
+  PetscInt su1x, su1y, su1z, so2x, so2y, so2z;
+  PetscCall(DMStagGetLocationSlot(dm, BACK_DOWN, 0, &su1x));
+  PetscCall(DMStagGetLocationSlot(dm, BACK_LEFT, 0, &su1y));
+  PetscCall(DMStagGetLocationSlot(dm, DOWN_LEFT, 0, &su1z));
+  PetscCall(DMStagGetLocationSlot(dm, LEFT, 0, &so2x));
+  PetscCall(DMStagGetLocationSlot(dm, DOWN, 0, &so2y));
+  PetscCall(DMStagGetLocationSlot(dm, BACK, 0, &so2z));
+
+  for (PetscInt ez = startz; ez < startz + nz; ++ez)
+    for (PetscInt ey = starty; ey < starty + ny; ++ey)
+      for (PetscInt ex = startx; ex < startx + nx; ++ex) {
+        arrO2[ez][ey][ex][so2x] =
+            (arrU1[ez][ey + 1][ex][su1z] - arrU1[ez][ey][ex][su1z]) / hy -
+            (arrU1[ez + 1][ey][ex][su1y] - arrU1[ez][ey][ex][su1y]) / hz;
+        arrO2[ez][ey][ex][so2y] =
+            (arrU1[ez + 1][ey][ex][su1x] - arrU1[ez][ey][ex][su1x]) / hz -
+            (arrU1[ez][ey][ex + 1][su1z] - arrU1[ez][ey][ex][su1z]) / hx;
+        arrO2[ez][ey][ex][so2z] =
+            (arrU1[ez][ey][ex + 1][su1y] - arrU1[ez][ey][ex][su1y]) / hx -
+            (arrU1[ez][ey + 1][ex][su1x] - arrU1[ez][ey][ex][su1x]) / hy;
+      }
+
+  PetscCall(DMStagVecRestoreArrayRead(dm, localU1, &arrU1));
+  PetscCall(DMRestoreLocalVector(dm, &localU1));
+  PetscCall(DMStagVecRestoreArray(dm, localO2, &arrO2));
+  PetscCall(DMLocalToGlobal(dm, localO2, INSERT_VALUES, omega2_global));
+  PetscCall(DMRestoreLocalVector(dm, &localO2));
+  PetscFunctionReturn(PETSC_SUCCESS);
+}
+
+// omega1 = ∇_h × u2  (face→edge)
+// 使用与耦合方程 (5.2) 完全相同的离散旋度 stencil。
+static PetscErrorCode
+compute_discrete_curl_face_to_edge(DM dm, Vec u2_global, Vec omega1_global,
+                                   PetscReal hx, PetscReal hy, PetscReal hz) {
+  PetscFunctionBeginUser;
+  PetscInt startx, starty, startz, nx, ny, nz;
+  PetscCall(DMStagGetCorners(dm, &startx, &starty, &startz, &nx, &ny, &nz, NULL,
+                             NULL, NULL));
+  Vec localU2;
+  PetscScalar ****arrU2;
+  PetscCall(DMGetLocalVector(dm, &localU2));
+  PetscCall(DMGlobalToLocal(dm, u2_global, INSERT_VALUES, localU2));
+  PetscCall(DMStagVecGetArrayRead(dm, localU2, &arrU2));
+
+  Vec localO1;
+  PetscScalar ****arrO1;
+  PetscCall(DMGetLocalVector(dm, &localO1));
+  PetscCall(VecZeroEntries(localO1));
+  PetscCall(DMStagVecGetArray(dm, localO1, &arrO1));
+
+  PetscInt su2x, su2y, su2z, so1x, so1y, so1z;
+  PetscCall(DMStagGetLocationSlot(dm, LEFT, 0, &su2x));
+  PetscCall(DMStagGetLocationSlot(dm, DOWN, 0, &su2y));
+  PetscCall(DMStagGetLocationSlot(dm, BACK, 0, &su2z));
+  PetscCall(DMStagGetLocationSlot(dm, BACK_DOWN, 0, &so1x));
+  PetscCall(DMStagGetLocationSlot(dm, BACK_LEFT, 0, &so1y));
+  PetscCall(DMStagGetLocationSlot(dm, DOWN_LEFT, 0, &so1z));
+
+  for (PetscInt ez = startz; ez < startz + nz; ++ez)
+    for (PetscInt ey = starty; ey < starty + ny; ++ey)
+      for (PetscInt ex = startx; ex < startx + nx; ++ex) {
+        arrO1[ez][ey][ex][so1x] =
+            (arrU2[ez][ey][ex][su2z] - arrU2[ez][ey - 1][ex][su2z]) / hy -
+            (arrU2[ez][ey][ex][su2y] - arrU2[ez - 1][ey][ex][su2y]) / hz;
+        arrO1[ez][ey][ex][so1y] =
+            (arrU2[ez][ey][ex][su2x] - arrU2[ez - 1][ey][ex][su2x]) / hz -
+            (arrU2[ez][ey][ex][su2z] - arrU2[ez][ey][ex - 1][su2z]) / hx;
+        arrO1[ez][ey][ex][so1z] =
+            (arrU2[ez][ey][ex][su2y] - arrU2[ez][ey][ex - 1][su2y]) / hx -
+            (arrU2[ez][ey][ex][su2x] - arrU2[ez - 1][ey][ex][su2x]) / hy;
+      }
+
+  PetscCall(DMStagVecRestoreArrayRead(dm, localU2, &arrU2));
+  PetscCall(DMRestoreLocalVector(dm, &localU2));
+  PetscCall(DMStagVecRestoreArray(dm, localO1, &arrO1));
+  PetscCall(DMLocalToGlobal(dm, localO1, INSERT_VALUES, omega1_global));
+  PetscCall(DMRestoreLocalVector(dm, &localO1));
+  PetscFunctionReturn(PETSC_SUCCESS);
+}
+
 // 线性求解器选择开关：
 // - 全局开关：-use_graddiv <bool> / -graddiv_gamma <real>
 // - 分前缀开关：-one_use_graddiv, -one_graddiv_gamma 等
@@ -1300,6 +1403,15 @@ PetscErrorCode DUAL_MAC::solve(RefSol refSol, ExternalForce externalForce) {
 
   // ===== 2. 设置初始条件（t=0时刻）=====
   PetscCall(setup_initial_solution(refSol, u1_0, u2_0, omega1_0, omega2_0));
+
+  // ===== 2b. 用离散旋度覆盖投影涡量，保证耦合方程一致性 =====
+  // 连续层面 Π_face(∇×u) ≠ ∇_h × Π_edge(u)，直接投影参考解会导致
+  // 初始涡量与耦合方程强制的离散旋度不一致，产生螺旋度跳变。
+  PetscCall(
+      compute_discrete_curl_edge_to_face(dmSol_1, u1_0, omega2_0, dx, dy, dz));
+  PetscCall(
+      compute_discrete_curl_face_to_edge(dmSol_2, u2_0, omega1_0, dx, dy, dz));
+
 #if DUAL_MAC_DEBUG
   Evaluation debugEvaluator;
   const PetscReal debugCellVolume =
@@ -1346,13 +1458,12 @@ PetscErrorCode DUAL_MAC::solve(RefSol refSol, ExternalForce externalForce) {
 
     const PetscReal startup_dt = 0.5 * this->dt;
     PetscCall(assemble_1form_system_matrix(
-        dmSol_1, dmSol_2, A_startup, rhs_startup,
-        sol1_init, sol2_old, sol1_init,
-        externalForce, 0.0, startup_dt));
+        dmSol_1, dmSol_2, A_startup, rhs_startup, sol1_init, sol2_old,
+        sol1_init, externalForce, 0.0, startup_dt));
 
     PetscCall(solve_linear_system_with_switch(
-        A_startup, rhs_startup, sol1_old, dmSol_1, "one_",
-        this->pinPressure, startup_dt, this->stab_alpha, this->stab_gamma));
+        A_startup, rhs_startup, sol1_old, dmSol_1, "one_", this->pinPressure,
+        startup_dt, this->stab_alpha, this->stab_gamma));
 
     PetscCall(MatDestroy(&A_startup));
     PetscCall(VecDestroy(&rhs_startup));
@@ -1362,28 +1473,26 @@ PetscErrorCode DUAL_MAC::solve(RefSol refSol, ExternalForce externalForce) {
   {
     Vec sol1_init_dbg = NULL;
     PetscCall(DMCreateGlobalVector(dmSol_1, &sol1_init_dbg));
-    PetscCall(assemble_sol1_from_components(dmSol_1, u1_0, omega2_0,
-                                            sol1_init_dbg));
+    PetscCall(
+        assemble_sol1_from_components(dmSol_1, u1_0, omega2_0, sol1_init_dbg));
 
     PetscCall(PetscPrintf(PETSC_COMM_WORLD,
                           "[DEBUG] 输出初始整体状态向量(sol1_old/sol2_old)\n"));
-    PetscCall(dump_vector_ascii_matlab_debug(sol1_old,
-                                             "initial_sol1_half_state", 0));
-    PetscCall(dump_vector_ascii_matlab_debug(sol2_old,
-                                             "initial_sol2_state", 0));
+    PetscCall(
+        dump_vector_ascii_matlab_debug(sol1_old, "initial_sol1_half_state", 0));
+    PetscCall(
+        dump_vector_ascii_matlab_debug(sol2_old, "initial_sol2_state", 0));
 
     PetscCall(PetscPrintf(PETSC_COMM_WORLD, "[DEBUG] 初值误差评估 (t=0)\n"));
-    PetscCall(debugEvaluator.compute_error(dmSol_1, sol1_init_dbg, refSol,
-                                           0.0, 0.0, debugCellVolume));
+    PetscCall(debugEvaluator.compute_error(dmSol_1, sol1_init_dbg, refSol, 0.0,
+                                           0.0, debugCellVolume));
     PetscCall(debugEvaluator.compute_error(dmSol_2, sol2_old, refSol, 0.0, 0.0,
                                            debugCellVolume));
 
-    PetscCall(PetscPrintf(PETSC_COMM_WORLD,
-                          "[DEBUG] 1/2时刻误差评估 (t=%g)\n",
+    PetscCall(PetscPrintf(PETSC_COMM_WORLD, "[DEBUG] 1/2时刻误差评估 (t=%g)\n",
                           (double)(0.5 * this->dt)));
-    PetscCall(debugEvaluator.compute_error(dmSol_1, sol1_old, refSol,
-                                           0.5 * this->dt, 0.0,
-                                           debugCellVolume));
+    PetscCall(debugEvaluator.compute_error(
+        dmSol_1, sol1_old, refSol, 0.5 * this->dt, 0.0, debugCellVolume));
     PetscCall(debug_check_vec_finite(sol1_old, "sol1_old_after_half_assemble"));
 
     PetscCall(VecDestroy(&sol1_init_dbg));
@@ -1400,8 +1509,8 @@ PetscErrorCode DUAL_MAC::solve(RefSol refSol, ExternalForce externalForce) {
   // 初始时刻不变量：使用 t=0 的 (u1,omega2) 与 (u2,omega1)
   Vec sol1_init_invariant = NULL;
   PetscCall(DMCreateGlobalVector(dmSol_1, &sol1_init_invariant));
-  PetscCall(
-      assemble_sol1_from_components(dmSol_1, u1_0, omega2_0, sol1_init_invariant));
+  PetscCall(assemble_sol1_from_components(dmSol_1, u1_0, omega2_0,
+                                          sol1_init_invariant));
   {
     InvariantResult inv0;
     PetscCall(invariantEvaluator.compute_invariants(
@@ -1457,14 +1566,14 @@ PetscErrorCode DUAL_MAC::solve(RefSol refSol, ExternalForce externalForce) {
     GradPressureOmegaInnerProductResult gpw;
     PetscCall(invariantEvaluator.compute_grad_pressure_omega_inner_products(
         dmSol_1, sol1_new, dmSol_2, sol2_new, invariantCellVolume, &gpw));
-    PetscCall(
-        PetscPrintf(PETSC_COMM_WORLD,
-                    "[Invariant] step=%" PetscInt_FMT ", t2=%.6f, t1=%.6f: "
-                    "H1=%.12e, H2=%.12e, K1=%.12e, K2=%.12e, "
-                    "<grad p3,omega2>=%.12e, <grad p0,omega1>=%.12e\n",
-                    k, (double)current_time, (double)time_half, (double)inv.H1,
-                    (double)inv.H2, (double)inv.K1, (double)inv.K2,
-                    (double)gpw.gradP3_dot_omega2, (double)gpw.gradP0_dot_omega1));
+    PetscCall(PetscPrintf(
+        PETSC_COMM_WORLD,
+        "[Invariant] step=%" PetscInt_FMT ", t2=%.6f, t1=%.6f: "
+        "H1=%.12e, H2=%.12e, K1=%.12e, K2=%.12e, "
+        "<grad p3,omega2>=%.12e, <grad p0,omega1>=%.12e\n",
+        k, (double)current_time, (double)time_half, (double)inv.H1,
+        (double)inv.H2, (double)inv.K1, (double)inv.K2,
+        (double)gpw.gradP3_dot_omega2, (double)gpw.gradP0_dot_omega1));
 #if DUAL_MAC_DEBUG
     PetscCall(dump_vector_ascii_matlab_debug(sol2_new, "twoform_solution", k));
     PetscCall(dump_vector_ascii_matlab_debug(sol1_new, "oneform_solution", k));

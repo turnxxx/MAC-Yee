@@ -31,6 +31,13 @@
     do { } while (0)
 #endif
 
+// 对流项开关：控制是否组装对流项矩阵和右端对流项
+// - 默认开启（DUAL_MAC_ENABLE_CONVECTION=1）
+// - 编译时可通过 -DDUAL_MAC_ENABLE_CONVECTION=0 关闭
+#ifndef DUAL_MAC_ENABLE_CONVECTION
+#define DUAL_MAC_ENABLE_CONVECTION 1
+#endif
+
 // DMStag stencil location的简化命名
 #define DOWN_LEFT DMSTAG_DOWN_LEFT
 #define DOWN DMSTAG_DOWN

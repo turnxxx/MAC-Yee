@@ -35,12 +35,12 @@ int main(int argc, char **argv) {
   PetscInt baseNx = 4, baseNy = 4, baseNz = 4, baseNt = 4;
   // 固定四组网格级别：N = 4, 6, 8, 10（对应 Nx=Ny=Nz）
   const std::vector<PetscInt> gridLevels = {5};
-  PetscReal nu = 1e4;     // 动力粘度
-  PetscReal tfinal = 0.5; // 最终时间
+  PetscReal nu = 1e-4;  // 动力粘度
+  PetscReal tfinal = 5; // 最终时间
   PetscReal xmin = 0.0, xmax = 1.0;
   PetscReal ymin = 0.0, ymax = 1.0;
   PetscReal zmin = 0.0, zmax = 1.0;
-  PetscBool pinPressure = PETSC_TRUE;
+  PetscBool pinPressure = PETSC_FALSE;
   PetscReal stabAlpha = 1000.0, stabGamma = 1000.0;
 
   PetscCall(PetscOptionsGetInt(NULL, NULL, "-nx", &baseNx, NULL));
@@ -171,7 +171,7 @@ int main(int argc, char **argv) {
     // 令 dt = tfinal / Nt 与 hx = (xmax-xmin)/Nx 尽量一致
     const PetscReal hx = (xmax - xmin) / (PetscReal)Nx;
     const PetscInt Nt =
-        5 * PetscMax((PetscInt)1, (PetscInt)std::lround((double)(tfinal / hx)));
+        PetscMax((PetscInt)1, (PetscInt)std::lround((double)(tfinal / hx)));
 
     PetscCall(PetscPrintf(
         PETSC_COMM_WORLD,

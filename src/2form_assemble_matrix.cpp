@@ -33,10 +33,12 @@ PetscErrorCode DUAL_MAC::assemble_2form_system_matrix(
   // ===== 3. 组装对流项矩阵：0.5 * ω₂^{h,k-1/2} ×（对 u₂）=====
   // 对应方程(5.1)中的 ω₂^{h,k-1/2} × (u₂^{k} + u₂^{k-1})/2
   // 注意：assemble_u2_conv_matrix 内部已经包含了 0.5 的系数
-  /*   DUAL_MAC_DEBUG_LOG("[DEBUG] [2-form] 对流项矩阵组装开始\n");
-    PetscCall(assemble_u2_conv_matrix(dmSol_2, A, dmSol_1, omega2_known));
-    DUAL_MAC_DEBUG_LOG("[DEBUG] [2-form] 对流项矩阵组装完成\n");
-   */
+#if DUAL_MAC_ENABLE_CONVECTION
+  DUAL_MAC_DEBUG_LOG("[DEBUG] [2-form] 对流项矩阵组装开始\n");
+  PetscCall(assemble_u2_conv_matrix(dmSol_2, A, dmSol_1, omega2_known));
+  DUAL_MAC_DEBUG_LOG("[DEBUG] [2-form] 对流项矩阵组装完成\n");
+#endif
+
   // ===== 4. 组装旋度项矩阵：0.5/Re * ∇×（对 ω₁）=====
   // 对应方程(5.1)中的 (1/Re) ∇_h × (ω₁^{k} + ω₁^{k-1})/2
   // 由于 assemble_omega1_curl_matrix 使用 coeff = 1.0/Re
@@ -228,9 +230,10 @@ PetscErrorCode DUAL_MAC::assemble_rhs2_vector(DM dmSol_2, Vec rhs, Vec u2_prev,
              arrU2Prev[ez][ey + 1][ex - 1][slot_u2_y]); // 左上单元的DOWN面
 
         // 对流项：-0.5 * (ω₂ʸ u₂ᶻ - ω₂ᶻ u₂ʸ)（0.5 来自时间平均，负号来自移项）
-        // 右端对流项
-        /*  rhs_val -= 0.5 * (omega2_y * u2_z_prev - omega2_z * u2_y_prev);
-         */
+#if DUAL_MAC_ENABLE_CONVECTION
+        rhs_val -= 0.5 * (omega2_y * u2_z_prev - omega2_z * u2_y_prev);
+#endif
+
         // 旋度项：-0.5/Re * (∇ × ω₁^{k-1})_x
         // (∇ × ω₁)_x = ∂ω₁ᶻ/∂y - ∂ω₁ʸ/∂z
         // 第一项：∂ω₁ᶻ/∂y ≈ (ω₁ᶻ|_{ey} - ω₁ᶻ|_{ey-1}) / hy
@@ -296,7 +299,9 @@ PetscErrorCode DUAL_MAC::assemble_rhs2_vector(DM dmSol_2, Vec rhs, Vec u2_prev,
                     arrU2Prev[ez][ey - 1][ex][slot_u2_z] +     // 下方BACK面
                     arrU2Prev[ez + 1][ey - 1][ex][slot_u2_z]); // 前下BACK面
         // 右端对流项
-        // rhs_val -= 0.5 * (omega2_z_y * u2_x_prev - omega2_x * u2_z_prev_y);
+#if DUAL_MAC_ENABLE_CONVECTION
+        rhs_val -= 0.5 * (omega2_z_y * u2_x_prev - omega2_x * u2_z_prev_y);
+#endif
 
         // 旋度项：-0.5/Re * (∇ × ω₁^{k-1})_y
         // (∇ × ω₁)_y = ∂ω₁ˣ/∂z - ∂ω₁ᶻ/∂x
@@ -360,8 +365,9 @@ PetscErrorCode DUAL_MAC::assemble_rhs2_vector(DM dmSol_2, Vec rhs, Vec u2_prev,
                     arrU2Prev[ez - 1][ey][ex + 1][slot_u2_x]); // 右后LEFT面
 
         // 右端对流项
-        // rhs_val -= 0.5 * (omega2_x_z * u2_y_prev_z - omega2_y_z *
-        // u2_x_prev_z);
+#if DUAL_MAC_ENABLE_CONVECTION
+        rhs_val -= 0.5 * (omega2_x_z * u2_y_prev_z - omega2_y_z * u2_x_prev_z);
+#endif
 
         // 旋度项：-0.5/Re * (∇ × ω₁^{k-1})_z
         // (∇ × ω₁)_z = ∂ω₁ʸ/∂x - ∂ω₁ˣ/∂y

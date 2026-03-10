@@ -34,9 +34,11 @@ PetscErrorCode DUAL_MAC::assemble_1form_system_matrix(
   // ===== 3. 组装对流项矩阵：0.5 * ω₁^{h,k} ×（对 u₁）=====
   // 对应方程(5.4)中的 ω₁^{h,k} × (u₁^{k+1/2} + u₁^{k-1/2})/2
   // 注意：assemble_u1_conv_matrix 内部已经包含了 0.5 的系数
-  /*   DUAL_MAC_DEBUG_LOG("[DEBUG] [1-form] 对流项矩阵组装开始\n");
-    PetscCall(assemble_u1_conv_matrix(dmSol_1, A, dmSol_2, omega1_known));
-    DUAL_MAC_DEBUG_LOG("[DEBUG] [1-form] 对流项矩阵组装完成\n"); */
+#if DUAL_MAC_ENABLE_CONVECTION
+  DUAL_MAC_DEBUG_LOG("[DEBUG] [1-form] 对流项矩阵组装开始\n");
+  PetscCall(assemble_u1_conv_matrix(dmSol_1, A, dmSol_2, omega1_known));
+  DUAL_MAC_DEBUG_LOG("[DEBUG] [1-form] 对流项矩阵组装完成\n");
+#endif
 
   // ===== 4. 组装旋度项矩阵：0.5/Re * ∇×（对 ω₂）=====
   // 对应方程(5.4)中的 (1/Re) ∇_h × (ω₂^{k+1/2} + ω₂^{k-1/2})/2
@@ -248,8 +250,9 @@ PetscErrorCode DUAL_MAC::assemble_rhs1_vector(DM dmSol_1, Vec rhs, Vec u1_prev,
                     arrU1Prev[ez][ey - 1][ex + 1][slot_u1_y]);
 
         // 对流项：-0.5 * (ω₁ʸ u₁ᶻ - ω₁ᶻ u₁ʸ)（0.5 来自时间平均，负号来自移项）
-        // 右端对流项
-        // rhs_val -= 0.5 * (omega1_y * u1_z_prev - omega1_z * u1_y_prev);
+#if DUAL_MAC_ENABLE_CONVECTION
+        rhs_val -= 0.5 * (omega1_y * u1_z_prev - omega1_z * u1_y_prev);
+#endif
 
         // 旋度项：-0.5/Re * (∇ × ω₂^{k-1/2})_x
         // (∇ × ω₂)_x = ∂ω₂ᶻ/∂y - ∂ω₂ʸ/∂z
@@ -320,8 +323,9 @@ PetscErrorCode DUAL_MAC::assemble_rhs1_vector(DM dmSol_1, Vec rhs, Vec u1_prev,
                     arrU1Prev[ez - 1][ey + 1][ex][slot_u1_z]);
 
         // 对流项：-0.5 * (ω₁ᶻ u₁ˣ - ω₁ˣ u₁ᶻ)（0.5 来自时间平均，负号来自移项）
-        // 右端对流项
-        // rhs_val -= 0.5 * (omega1_z_y * u1_x_prev - omega1_x * u1_z_prev_y);
+#if DUAL_MAC_ENABLE_CONVECTION
+        rhs_val -= 0.5 * (omega1_z_y * u1_x_prev - omega1_x * u1_z_prev_y);
+#endif
 
         // 旋度项：-0.5/Re * (∇ × ω₂^{k-1/2})_y
         // (∇ × ω₂)_y = ∂ω₂ˣ/∂z - ∂ω₂ᶻ/∂x
@@ -405,9 +409,9 @@ PetscErrorCode DUAL_MAC::assemble_rhs1_vector(DM dmSol_1, Vec rhs, Vec u1_prev,
                       [slot_u1_x]); // 左前邻居的 BACK_DOWN (左前)
 
         // 对流项：-0.5 * (ω₁ˣ u₁ʸ - ω₁ʸ u₁ˣ)（0.5 来自时间平均，负号来自移项）
-        // 右端对流项
-        // rhs_val -= 0.5 * (omega1_x_z * u1_y_prev_z - omega1_y_z *
-        // u1_x_prev_z);
+#if DUAL_MAC_ENABLE_CONVECTION
+        rhs_val -= 0.5 * (omega1_x_z * u1_y_prev_z - omega1_y_z * u1_x_prev_z);
+#endif
 
         // 旋度项：-0.5/Re * (∇ × ω₂^{k-1/2})_z
         // (∇ × ω₂)_z = ∂ω₂ʸ/∂x - ∂ω₂ˣ/∂y
