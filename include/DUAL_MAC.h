@@ -80,6 +80,8 @@ public:
 
     // 设置参考解
     PetscErrorCode set_reference_solution(RefSol refSol);
+    // 设置稳定化参数（可在 test/main.cpp 中直接调用）
+    PetscErrorCode set_stabilization_parameters(PetscReal alpha, PetscReal gamma);
 
     // 设置边界条件
     PetscErrorCode setup_boundary_conditions(PetscReal time = 0.0);
@@ -110,9 +112,16 @@ public:
     PetscReal get_err_u1() const { return err_u1; }
     PetscReal get_err_omega2() const { return err_omega2; }
     PetscReal get_err_p0() const { return err_p0; }
+    PetscReal get_err_grad_p0() const { return err_grad_p0; }
     PetscReal get_err_u2() const { return err_u2; }
     PetscReal get_err_omega1() const { return err_omega1; }
     PetscReal get_err_p3() const { return err_p3; }
+    PetscReal get_err_grad_p3() const { return err_grad_p3; }
+    PetscReal get_stab_alpha() const { return stab_alpha; }
+    PetscReal get_stab_gamma() const { return stab_gamma; }
+
+    // 计算缓存解中 p0 和 p3 的离散均值，返回 (mean_p0, mean_p3)
+    PetscErrorCode get_pressure_means(PetscReal *mean_p0, PetscReal *mean_p3);
 
 
     // 获取各个变量的slot索引（用于访问sol中对应的数据）
@@ -143,6 +152,8 @@ private:
     PetscReal time,dt;
     PetscReal nu;          // 动力粘度
     PetscBool pinPressure; // 是否固定压力点
+    PetscReal stab_alpha;  // 1-form 稳定化参数 alpha
+    PetscReal stab_gamma;  // 2-form 稳定化参数 gamma（以及相关 Schur 参数）
         
     // DM对象：只创建一个组合DMStag，通过设置不同位置的dof数量来容纳所有6个变量
     // 在DMStag中：
@@ -187,8 +198,8 @@ private:
 
     // 误差信息
     PetscReal err_abs, err_rel;
-    PetscReal err_u1, err_omega2, err_p0;
-    PetscReal err_u2, err_omega1, err_p3;
+    PetscReal err_u1, err_omega2, err_p0, err_grad_p0;
+    PetscReal err_u2, err_omega1, err_p3, err_grad_p3;
 
     // 辅助函数：de Rham复形操作（基于DMStag的有限差分实现）
     // 这些操作直接在组合向量sol的不同slot之间进行
@@ -300,5 +311,5 @@ private:
 };
 
 // 线性求解器接口（定义于 src/linearsolver.cpp）
-PetscErrorCode solve_linear_system_basic(Mat A, Vec rhs, Vec sol, DM dm, const char *optionsPrefix = NULL);
-PetscErrorCode solve_linear_system_graddiv(Mat A, Vec rhs, Vec sol, DM dm, PetscReal gamma, const char *optionsPrefix = NULL);
+PetscErrorCode solve_linear_system_basic(Mat A, Vec rhs, Vec sol, DM dm, const char *optionsPrefix = NULL, PetscBool attachPressureNullspace = PETSC_FALSE, PetscReal dt = 0.0, PetscReal alphaExternal = 1.0, PetscReal gammaExternal = 0.0);
+PetscErrorCode solve_linear_system_graddiv(Mat A, Vec rhs, Vec sol, DM dm, PetscReal gamma, const char *optionsPrefix = NULL, PetscBool attachPressureNullspace = PETSC_FALSE, PetscReal dt = 0.0, PetscReal alphaExternal = 1.0, PetscReal gammaExternal = 0.0);

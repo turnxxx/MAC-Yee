@@ -1,0 +1,48 @@
+-half_mag_ksp fgmres 
+-half_mag_ksp_converged_reason
+-half_mag_ksp_max_it 100
+-half_mag_ksp_rtol 1e-2 
+-half_mag_ksp_monitor
+-half_mag_pc_type asm 
+-half_mag_sub_ksp_type preonly
+-half_mag_sub_pc_type jacobi
+
+-half_B_ksp_converged_reason
+-half_B_ksp_max_it 10
+-half_B_ksp_rtol 1.0e-2
+-half_B_ksp_monitor
+-half_B_ksp_type fgmres
+-half_B_pc_type asm 
+-half_B_sub_ksp_type richardson
+-half_B_sub_pc_type jacobi
+
+-integer_mag_ksp fgmres 
+-integer_mag_ksp_converged_reason
+-integer_mag_ksp_max_it 100
+-integer_mag_ksp_rtol 1e-2 
+-integer_mag_ksp_monitor
+-integer_mag_pc_type asm
+-integer_mag_sub_ksp_type gmres
+-integer_mag_sub_ksp_max_it 1
+-integer_mag_sub_pc_type jacobi
+
+-integer_J_ksp_converged_reason
+-integer_J_ksp_max_it 100
+-integer_J_ksp_rtol 1.0e-2
+-integer_J_ksp_monitor
+-integer_J_ksp_type richardson
+-integer_J_pc_type lu
+
+-integer_ksp_converged_reason
+-integer_ksp_max_it 100
+-integer_ksp_type gmres
+-integer_pc_type lu
+-integer_pc_factor_mat_solver_type mumps
+-integer_ksp_monitor
+#-integer_ksp_view 
+
+-half_ksp_converged_reason
+-half_ksp_max_it 100
+-half_ksp_type gmres
+-half_pc_type lu
+-half_pc_factor_mat_solver_type mumps

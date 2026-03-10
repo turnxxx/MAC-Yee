@@ -1,50 +1,77 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-NP="${NP:-4}"
+NP="${NP:-6}"
 BIN="/home/JTZ_DL/MAC-Yee/build/DUAL_MAC_TEST"
 LOG="${LOG:-/home/JTZ_DL/MAC-Yee/quick_test.log}"
 MPI_LAUNCHER="/home/JTZ_DL/petsc-3.23.0/x86_64/bin/mpirun"
 
-# 两场分裂(u/p)测试：
-# - u: 速度 + 涡量
-# - p: 压力场
-# 采用 additive 组合，便于并行稳健性调试
-# grad-div 稳定化：
-# - 1-form: -one_use_graddiv true -one_graddiv_gamma 1
-# - 2-form: -two_use_graddiv true -two_graddiv_gamma 1
+# 三场嵌套分裂（外层 u/p，内层 u->v/w）：
+# - p: 压力
+# - v: 速度
+# - w: 涡度
+# 约定：
+# - two_ 视为整数步
+# - one_ 视为半整数步
+# two_ 的速度子块(v)显式启用 Hypre ADS
 
 "${MPI_LAUNCHER}" -np "${NP}" "${BIN}" \
   -one_ksp_type fgmres -one_pc_type fieldsplit \
-  -one_pc_fieldsplit_type additive \
-  -one_fieldsplit_u_ksp_type fgmres -one_fieldsplit_u_ksp_max_it 200 \
-  -one_fieldsplit_u_pc_type asm -one_fieldsplit_u_pc_asm_overlap 2 \
-  -one_fieldsplit_u_sub_ksp_type preonly -one_fieldsplit_u_sub_pc_type ilu \
-  -one_fieldsplit_p_ksp_type preonly -one_fieldsplit_p_pc_type gamg \
-  -one_use_graddiv true -one_graddiv_gamma 1 \
-  -one_ksp_rtol 1e-10 -one_ksp_atol 1e-12 -one_ksp_max_it 500 \
-  -one_ksp_monitor_true_residual -one_ksp_converged_reason \
+  -one_pc_fieldsplit_type schur -one_pc_fieldsplit_schur_fact_type upper \
+  -one_fieldsplit_p_ksp_type fgmres -one_fieldsplit_p_pc_type jacobi \
+  -one_fieldsplit_p_ksp_rtol 1e-2 \
+  -one_fieldsplit_u_ksp_type fgmres -one_fieldsplit_u_pc_type fieldsplit \
+  -one_fieldsplit_u_ksp_atol 1e-5 \
+  -one_fieldsplit_u_pc_fieldsplit_type schur -one_fieldsplit_u_pc_fieldsplit_schur_fact_type upper \
+  -one_fieldsplit_u_fieldsplit_v_ksp_type fgmres -one_fieldsplit_u_fieldsplit_v_pc_type gamg \
+  -one_fieldsplit_u_fieldsplit_v_ksp_atol 1e-5 \
+  -one_fieldsplit_u_fieldsplit_w_ksp_type fgmres \
+  -one_fieldsplit_u_fieldsplit_w_ksp_atol 1e-5 \
+  -one_ksp_rtol 1e-5 -one_ksp_atol 1e-5 -one_ksp_max_it 100 \
+  -one_ksp_monitor_true_residual -one_ksp_converged_reason -one_ksp_view -one_pc_view \
   -one_ksp_error_if_not_converged \
   \
   -two_ksp_type fgmres -two_pc_type fieldsplit \
-  -two_pc_fieldsplit_type additive \
-  -two_fieldsplit_u_ksp_type fgmres -two_fieldsplit_u_ksp_max_it 200 \
-  -two_fieldsplit_u_pc_type asm -two_fieldsplit_u_pc_asm_overlap 2 \
-  -two_fieldsplit_u_sub_ksp_type preonly -two_fieldsplit_u_sub_pc_type ilu \
-  -two_fieldsplit_p_ksp_type preonly -two_fieldsplit_p_pc_type gamg \
+  -two_pc_fieldsplit_type schur -two_pc_fieldsplit_schur_fact_type upper \
+  -two_fieldsplit_p_ksp_type fgmres -two_fieldsplit_p_pc_type jacobi \
+  -two_fieldsplit_p_ksp_rtol 1e-2 \
+  -two_fieldsplit_u_ksp_type fgmres -two_fieldsplit_u_pc_type fieldsplit \
+  -two_fieldsplit_u_ksp_atol 1e-5 \
+  -two_fieldsplit_u_pc_fieldsplit_type schur -two_fieldsplit_u_pc_fieldsplit_schur_fact_type upper \
+  -two_fieldsplit_u_fieldsplit_v_ksp_type fgmres \
+  -two_fieldsplit_u_fieldsplit_v_ksp_atol 1e-5 \
+  -two_fieldsplit_u_fieldsplit_v_pc_type hypre \
+  -two_fieldsplit_u_fieldsplit_v_pc_hypre_type ads \
+  -two_fieldsplit_u_fieldsplit_v_ksp_monitor_true_residual \
+  -two_fieldsplit_u_fieldsplit_v_ksp_converged_reason \
+  -two_fieldsplit_u_fieldsplit_v_ksp_error_if_not_converged \
+  -two_fieldsplit_u_fieldsplit_v_ksp_view \
+  -two_fieldsplit_u_fieldsplit_v_pc_view \
+  -two_fieldsplit_u_fieldsplit_0_ksp_type fgmres \
+  -two_fieldsplit_u_fieldsplit_0_ksp_atol 1e-5 \
+  -two_fieldsplit_u_fieldsplit_0_pc_type hypre \
+  -two_fieldsplit_u_fieldsplit_0_pc_hypre_type ads \
+  -two_fieldsplit_u_fieldsplit_0_ksp_monitor_true_residual \
+  -two_fieldsplit_u_fieldsplit_0_ksp_converged_reason \
+  -two_fieldsplit_u_fieldsplit_0_ksp_error_if_not_converged \
+  -two_fieldsplit_u_fieldsplit_0_ksp_view \
+  -two_fieldsplit_u_fieldsplit_0_pc_view \
+  -two_fieldsplit_u_fieldsplit_w_ksp_type fgmres \
+  -two_fieldsplit_u_fieldsplit_w_ksp_atol 1e-5 \
+  -two_ads_fallback_to_gamg false \
   -two_use_graddiv true -two_graddiv_gamma 1 \
-  -two_ksp_rtol 1e-10 -two_ksp_atol 1e-12 -two_ksp_max_it 500 \
-  -two_ksp_monitor_true_residual -two_ksp_converged_reason \
+  -two_ksp_rtol 1e-5 -two_ksp_atol 1e-5 -two_ksp_max_it 100 \
+  #-two_ksp_monitor_true_residual -two_ksp_converged_reason -two_ksp_view -two_pc_view \
   -two_ksp_error_if_not_converged \
   \
   -half_ksp_type fgmres -half_pc_type fieldsplit \
-  -half_pc_fieldsplit_type additive \
-  -half_fieldsplit_u_ksp_type fgmres -half_fieldsplit_u_ksp_max_it 200 \
-  -half_fieldsplit_u_pc_type asm -half_fieldsplit_u_pc_asm_overlap 2 \
-  -half_fieldsplit_u_sub_ksp_type preonly -half_fieldsplit_u_sub_pc_type ilu \
-  -half_fieldsplit_p_ksp_type preonly -half_fieldsplit_p_pc_type gamg \
-  -half_ksp_rtol 1e-10 -half_ksp_atol 1e-12 -half_ksp_max_it 500 \
-  -half_ksp_monitor_true_residual -half_ksp_converged_reason \
+  -half_pc_fieldsplit_type schur -half_pc_fieldsplit_schur_fact_type upper \
+  -half_fieldsplit_p_ksp_type fgmres -half_fieldsplit_p_pc_type gamg \
+  -half_fieldsplit_p_ksp_rtol 1e-2 \
+  -half_fieldsplit_u_ksp_type fgmres -half_fieldsplit_u_pc_type jacobi \
+  -half_fieldsplit_u_ksp_atol 1e-5 \
+  -half_ksp_rtol 1e-5 -half_ksp_atol 1e-5 -half_ksp_max_it 500 \
+  -half_ksp_monitor_true_residual -half_ksp_converged_reason -half_ksp_view -half_pc_view \
   -half_ksp_error_if_not_converged \
   "$@" > "${LOG}" 2>&1
 

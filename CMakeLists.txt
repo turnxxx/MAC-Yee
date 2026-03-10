@@ -73,3 +73,15 @@ target_link_libraries(convergence_test PRIVATE ${PETSC_DIR}/${PETSC_ARCH}/lib/li
 if(DUAL_MAC_ENABLE_DEBUG_LOG)
     target_compile_definitions(convergence_test PRIVATE DUAL_MAC_DEBUG=1)
 endif()
+
+add_executable(preserving
+${CMAKE_CURRENT_SOURCE_DIR}/test/preserving.cpp
+${TEST_SRC}
+)
+target_include_directories(preserving PRIVATE
+    ${HEAD_PATH}
+)
+target_link_libraries(preserving PRIVATE ${PETSC_DIR}/${PETSC_ARCH}/lib/libpetsc.so)
+if(DUAL_MAC_ENABLE_DEBUG_LOG)
+    target_compile_definitions(preserving PRIVATE DUAL_MAC_DEBUG=1)
+endif()

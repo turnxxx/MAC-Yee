@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+NP="${NP:-6}"
+BIN="/home/JTZ_DL/MAC-Yee/build/DUAL_MAC_TEST"
+LOG="${LOG:-/home/JTZ_DL/MAC-Yee/quick_test.log}"
+MPI_LAUNCHER="/home/JTZ_DL/petsc-3.23.0/x86_64/bin/mpirun"
+
+# 三场嵌套分裂（外层 u/p，内层 u->v/w）：
+# - p: 压力
+# - v: 速度
+# - w: 涡度
+# 约定：
+# - half_ 视为初始半步（仅 u1 + p0，无涡度，无内层 v/w 分裂）
+# - one_  视为半整数步（u1 + omega2 + p0，内层 v/w 分裂）
+# - two_  视为整数步  （u2 + omega1 + p3，内层 v/w 分裂）
+#
+# 预条件策略：
+# - half_/one_ 使用质量增强(mass augmentation): alpha*(h^2/6)*grad_div 加入速度块
+#   Schur 补近似: S_p = -(alpha + 1/dt)^{-1} I
+# - two_ 使用增广拉格朗日(augmented Lagrangian): gamma*grad_div 加入速度块
+#   Schur 补近似: S_p = -gamma * I
+
+"${MPI_LAUNCHER}" -np "${NP}" "${BIN}" \
+  \
+  -one_ksp_type fgmres -one_pc_type fieldsplit \
+  -one_pc_fieldsplit_type schur -one_pc_fieldsplit_schur_fact_type upper \
+  -one_pc_fieldsplit_schur_precondition user \
+  -one_alpha 20000 \
+  -one_ksp_monitor \
+  -one_fieldsplit_p_ksp_type fgmres -one_fieldsplit_p_pc_type jacobi \
+  -one_fieldsplit_p_ksp_rtol 1e-2 \
+  -one_fieldsplit_u_ksp_type fgmres -one_fieldsplit_u_pc_type fieldsplit \
+  -one_fieldsplit_u_ksp_rtol 1e-2\
+  -one_fieldsplit_u_ksp_monitor \
+  -one_fieldsplit_u_pc_fieldsplit_type schur \
+  -one_fieldsplit_u_pc_fieldsplit_schur_fact_type upper \
+  -one_fieldsplit_u_fieldsplit_v_ksp_type preonly \
+  -one_fieldsplit_u_fieldsplit_v_pc_type lu \
+   -one_fieldsplit_u_fieldsplit_v_pc_factor_mat_solver_type mumps \
+  -one_fieldsplit_u_fieldsplit_v_ksp_rtol 1e-2\
+  -one_fieldsplit_u_fieldsplit_v_ksp_monitor \
+  -one_fieldsplit_u_fieldsplit_w_ksp_type fgmres \
+  -one_fieldsplit_u_fieldsplit_w_pc_type jacobi \
+  -one_fieldsplit_u_fieldsplit_w_ksp_rtol 1e-2 \
+  -one_fieldsplit_u_fieldsplit_w_ksp_monitor \
+  -one_ksp_rtol 1e-5 -one_ksp_atol 1e-6 -one_ksp_max_it 100 \
+  -one_ksp_error_if_not_converged \
+  \
+  -two_ksp_type fgmres -two_pc_type fieldsplit \
+  -two_ksp_monitor \
+  -two_pc_fieldsplit_type schur -two_pc_fieldsplit_schur_fact_type upper \
+  -two_pc_fieldsplit_schur_precondition user \
+  -two_fieldsplit_p_ksp_type fgmres -two_fieldsplit_p_pc_type jacobi \
+  -two_fieldsplit_p_ksp_rtol 1e-2 \
+  -two_fieldsplit_p_ksp_monitor \
+  -two_fieldsplit_u_ksp_type fgmres -two_fieldsplit_u_pc_type fieldsplit \
+  -two_fieldsplit_u_ksp_rtol 1e-2 \
+  -two_fieldsplit_u_ksp_monitor \
+  -two_fieldsplit_u_pc_fieldsplit_type schur \
+  -two_fieldsplit_u_pc_fieldsplit_schur_fact_type upper \
+ -two_fieldsplit_u_fieldsplit_v_ksp_type fgmres \
+  -two_fieldsplit_u_fieldsplit_v_pc_type hypre \
+  -two_fieldsplit_u_fieldsplit_v_pc_hypre_type ads \
+  -two_fieldsplit_u_fieldsplit_v_ksp_rtol 1e-2 \
+  -two_fieldsplit_u_fieldsplit_v_ksp_atol 1e-3 \
+  -two_fieldsplit_u_fieldsplit_v_ksp_max_it 50 \
+  -two_fieldsplit_u_fieldsplit_v_ksp_monitor \
+  -two_fieldsplit_u_fieldsplit_w_ksp_type fgmres \
+  -two_fieldsplit_u_fieldsplit_w_pc_type jacobi \
+  -two_fieldsplit_u_fieldsplit_w_ksp_rtol 1e-2 \
+  -two_fieldsplit_u_fieldsplit_w_ksp_atol 1e-3 \
+  -two_fieldsplit_u_fieldsplit_w_ksp_monitor \
+  -two_use_graddiv true -two_graddiv_gamma 10000 \
+  -two_ksp_rtol 1e-5 -two_ksp_atol 1e-7 -two_ksp_max_it 20 \
+  -two_ksp_error_if_not_converged \
+  \
+  -half_ksp_type fgmres -half_pc_type fieldsplit \
+  -half_ksp_monitor \
+  -half_ksp_rtol 1e-5 -half_ksp_atol 1e-6 -half_ksp_max_it 100 \
+  -half_fieldsplit_u_ksp_rtol 1e-5  \
+  -half_fieldsplit_u_ksp_type fgmres \
+  -half_fieldsplit_u_pc_type jacobi \
+  -half_fieldsplit_u_ksp_monitor \
+  -half_pc_fieldsplit_type schur -half_pc_fieldsplit_schur_fact_type lower \
+  -half_pc_fieldsplit_schur_precondition self \
+  -half_fieldsplit_p_ksp_type fgmres -half_fieldsplit_p_pc_type hypre \
+  -half_fieldsplit_p_pc_hypre_type boomeramg \
+  -half_fieldsplit_p_ksp_rtol 1e-2 \
+  -half_fieldsplit_p_ksp_monitor \
+  -half_ksp_converged_reason \
+  -half_ksp_error_if_not_converged \
+  "$@" > "${LOG}" 2>&1
+
+echo "quick_test finished. np=${NP}, log=${LOG}" >> "${LOG}" 2>&1
