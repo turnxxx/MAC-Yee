@@ -98,3 +98,18 @@ endif()
 if(NOT DUAL_MAC_ENABLE_CONVECTION)
     target_compile_definitions(preserving PRIVATE DUAL_MAC_ENABLE_CONVECTION=0)
 endif()
+
+add_executable(stokes_convergence_test
+${CMAKE_CURRENT_SOURCE_DIR}/test/stokes_convergence_test.cpp
+${TEST_SRC}
+)
+target_include_directories(stokes_convergence_test PRIVATE
+    ${HEAD_PATH}
+)
+target_link_libraries(stokes_convergence_test PRIVATE ${PETSC_DIR}/${PETSC_ARCH}/lib/libpetsc.so)
+if(DUAL_MAC_ENABLE_DEBUG_LOG)
+    target_compile_definitions(stokes_convergence_test PRIVATE DUAL_MAC_DEBUG=1)
+endif()
+if(NOT DUAL_MAC_ENABLE_CONVECTION)
+    target_compile_definitions(stokes_convergence_test PRIVATE DUAL_MAC_ENABLE_CONVECTION=0)
+endif()

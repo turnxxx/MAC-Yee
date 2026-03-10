@@ -236,16 +236,16 @@ PetscErrorCode DUAL_MAC::assemble_rhs2_vector(DM dmSol_2, Vec rhs, Vec u2_prev,
 
         // 旋度项：-0.5/Re * (∇ × ω₁^{k-1})_x
         // (∇ × ω₁)_x = ∂ω₁ᶻ/∂y - ∂ω₁ʸ/∂z
-        // 第一项：∂ω₁ᶻ/∂y ≈ (ω₁ᶻ|_{ey} - ω₁ᶻ|_{ey-1}) / hy
+        // 第一项：∂ω₁ᶻ/∂y ≈ (ω₁ᶻ|_{ey+1} - ω₁ᶻ|_{ey}) / hy（前向差分）
         // ω₁ᶻ 在 z 方向棱上（DOWN_LEFT）
         PetscScalar curl_x = 0.0;
-        curl_x += (arrOmega1Prev[ez][ey][ex][slot_omega1_z] -
-                   arrOmega1Prev[ez][ey - 1][ex][slot_omega1_z]) /
+        curl_x += (arrOmega1Prev[ez][ey + 1][ex][slot_omega1_z] -
+                   arrOmega1Prev[ez][ey][ex][slot_omega1_z]) /
                   hy;
-        // 第二项：-∂ω₁ʸ/∂z ≈ -(ω₁ʸ|_{ez} - ω₁ʸ|_{ez-1}) / hz
+        // 第二项：-∂ω₁ʸ/∂z ≈ -(ω₁ʸ|_{ez+1} - ω₁ʸ|_{ez}) / hz（前向差分）
         // ω₁ʸ 在 y 方向棱上（BACK_LEFT）
-        curl_x -= (arrOmega1Prev[ez][ey][ex][slot_omega1_y] -
-                   arrOmega1Prev[ez - 1][ey][ex][slot_omega1_y]) /
+        curl_x -= (arrOmega1Prev[ez + 1][ey][ex][slot_omega1_y] -
+                   arrOmega1Prev[ez][ey][ex][slot_omega1_y]) /
                   hz;
         rhs_val += curl_coeff * curl_x;
 
@@ -306,11 +306,11 @@ PetscErrorCode DUAL_MAC::assemble_rhs2_vector(DM dmSol_2, Vec rhs, Vec u2_prev,
         // 旋度项：-0.5/Re * (∇ × ω₁^{k-1})_y
         // (∇ × ω₁)_y = ∂ω₁ˣ/∂z - ∂ω₁ᶻ/∂x
         PetscScalar curl_y = 0.0;
-        curl_y += (arrOmega1Prev[ez][ey][ex][slot_omega1_x] -
-                   arrOmega1Prev[ez - 1][ey][ex][slot_omega1_x]) /
+        curl_y += (arrOmega1Prev[ez + 1][ey][ex][slot_omega1_x] -
+                   arrOmega1Prev[ez][ey][ex][slot_omega1_x]) /
                   hz;
-        curl_y -= (arrOmega1Prev[ez][ey][ex][slot_omega1_z] -
-                   arrOmega1Prev[ez][ey][ex - 1][slot_omega1_z]) /
+        curl_y -= (arrOmega1Prev[ez][ey][ex + 1][slot_omega1_z] -
+                   arrOmega1Prev[ez][ey][ex][slot_omega1_z]) /
                   hx;
         rhs_val += curl_coeff * curl_y;
 
@@ -372,11 +372,11 @@ PetscErrorCode DUAL_MAC::assemble_rhs2_vector(DM dmSol_2, Vec rhs, Vec u2_prev,
         // 旋度项：-0.5/Re * (∇ × ω₁^{k-1})_z
         // (∇ × ω₁)_z = ∂ω₁ʸ/∂x - ∂ω₁ˣ/∂y
         PetscScalar curl_z = 0.0;
-        curl_z += (arrOmega1Prev[ez][ey][ex][slot_omega1_y] -
-                   arrOmega1Prev[ez][ey][ex - 1][slot_omega1_y]) /
+        curl_z += (arrOmega1Prev[ez][ey][ex + 1][slot_omega1_y] -
+                   arrOmega1Prev[ez][ey][ex][slot_omega1_y]) /
                   hx;
-        curl_z -= (arrOmega1Prev[ez][ey][ex][slot_omega1_x] -
-                   arrOmega1Prev[ez][ey - 1][ex][slot_omega1_x]) /
+        curl_z -= (arrOmega1Prev[ez][ey + 1][ex][slot_omega1_x] -
+                   arrOmega1Prev[ez][ey][ex][slot_omega1_x]) /
                   hy;
         rhs_val += curl_coeff * curl_z;
 
@@ -979,7 +979,7 @@ PetscErrorCode DUAL_MAC::assemble_omega1_curl_matrix(PetscReal Re, DM dmSol_2,
         col[nCol].k = ez;
         col[nCol].loc = BACK_DOWN; // 本地的 x 方向棱（y=prev）
         col[nCol].c = 0;
-        val[nCol] = -coeff / hy; // 负号来自 -(ω₁ˣ|_{y=next} - ω₁ˣ|_{y=prev})
+        val[nCol] = coeff / hy; // 负号来自 -(ω₁ˣ|_{y=next} - ω₁ˣ|_{y=prev})
         nCol++;
 
         col[nCol].i = ex;
@@ -987,7 +987,7 @@ PetscErrorCode DUAL_MAC::assemble_omega1_curl_matrix(PetscReal Re, DM dmSol_2,
         col[nCol].k = ez;
         col[nCol].loc = BACK_DOWN; // 上方单元的 x 方向棱（y=next）
         col[nCol].c = 0;
-        val[nCol] = coeff / hy; // 正号来自 -(ω₁ˣ|_{y=next} - ω₁ˣ|_{y=prev})
+        val[nCol] = -coeff / hy; // 正号来自 -(ω₁ˣ|_{y=next} - ω₁ˣ|_{y=prev})
         nCol++;
 
         PetscCall(DMStagMatSetValuesStencil(dmSol_2, A, 1, &row, nCol, col, val,

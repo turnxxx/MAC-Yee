@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+NP="${NP:-6}"
+BIN="/home/JTZ_DL/MAC-Yee/build/convergence_test"
+TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
+LOG="${LOG:-/home/JTZ_DL/MAC-Yee/convergence_test_direct_${TIMESTAMP}.log}"
+MPI_LAUNCHER="/home/JTZ_DL/petsc-3.23.0/x86_64/bin/mpirun"
+
+# ─── 直接法求解（LU 分解） ───
+# 三个系统 (half_, one_, two_) 全部使用 ksp_type preonly + pc_type lu。
+# 可通过 SOLVER 环境变量选择后端：mumps（默认）或 superlu_dist。
+#
+# 用法：
+#   ./preserving_test_direct              # 默认 MUMPS
+#   SOLVER=superlu_dist ./preserving_test_direct
+#   SOLVER=mumps        ./preserving_test_direct
+#
+# 直接法不需要增广拉格朗日/质量增强，因此 alpha=0, use_graddiv=false。
+
+SOLVER="${SOLVER:-mumps}"
+
+# ─── MUMPS 常用调优参数（通过 -mat_mumps_* 设置） ───
+# -mat_mumps_icntl_14 <pct>    工作空间预留百分比（默认 20），内存不足时调大
+# -mat_mumps_icntl_24 1        启用空主元检测（奇异/近奇异矩阵）
+# -mat_mumps_icntl_25 0        空主元修复策略（0=不修复, >0=计算零空间）
+# -mat_mumps_icntl_23 <MB>     手动指定最大工作内存 (MB)，0=自动
+# -mat_mumps_icntl_7 <ord>     排序算法：5=METIS, 7=auto (默认)
+# -mat_mumps_cntl_1 <thr>      主元选取阈值（默认 0.01），增大提升稳定性
+# -mat_mumps_cntl_3 <eps>      空主元判定阈值（默认 0.0）
+#
+# ─── SuperLU_DIST 常用调优参数（通过 -mat_superlu_dist_* 设置） ───
+# -mat_superlu_dist_colperm <perm>     列排列：MMD_AT_PLUS_A（默认）, NATURAL, PARMETIS
+# -mat_superlu_dist_rowperm <perm>     行排列：LargeDiag_MC64（默认）, NOROWPERM
+# -mat_superlu_dist_parsymbfact <0|1>  并行符号分解（默认 0=串行，大问题建议开启）
+# -mat_superlu_dist_replacetinypivot <0|1> 替换微小主元（默认 1）
+# -mat_superlu_dist_equil YES          启用均衡化（默认 YES）
+# -mat_superlu_dist_iterrefine SLU_DOUBLE 迭代精化（SLU_NOREFINE / SLU_DOUBLE / SLU_EXTRA）
+
+# 公共 MUMPS 参数
+MUMPS_OPTS=()
+if [ "${SOLVER}" = "mumps" ]; then
+  MUMPS_OPTS=(
+    -mat_mumps_icntl_14 80
+    -mat_mumps_icntl_24 1
+    -mat_mumps_icntl_7  5
+  )
+fi
+
+# 公共 SuperLU_DIST 参数
+SLU_OPTS=()
+if [ "${SOLVER}" = "superlu_dist" ]; then
+  SLU_OPTS=(
+    -mat_superlu_dist_colperm PARMETIS
+    -mat_superlu_dist_replacetinypivot 1
+    -mat_superlu_dist_parsymbfact 1
+  )
+fi
+
+"${MPI_LAUNCHER}" -np "${NP}" "${BIN}" \
+  \
+  -one_ksp_type preonly \
+  -one_pc_type lu \
+  -one_pc_factor_mat_solver_type "${SOLVER}" \
+  -one_alpha 0 \
+  \
+  -two_ksp_type preonly \
+  -two_pc_type lu \
+  -two_pc_factor_mat_solver_type "${SOLVER}" \
+  -two_use_graddiv false -two_graddiv_gamma 0 \
+  \
+  -half_ksp_type preonly \
+  -half_pc_type lu \
+  -half_pc_factor_mat_solver_type "${SOLVER}" \
+  \
+  "${MUMPS_OPTS[@]}" \
+  "${SLU_OPTS[@]}" \
+  "$@" > "${LOG}" 2>&1
+
+echo "preserving_test_direct finished. solver=${SOLVER}, np=${NP}, log=${LOG}" >> "${LOG}" 2>&1

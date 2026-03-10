@@ -34,7 +34,7 @@ int main(int argc, char **argv) {
   // ===== 2. 设置参数（可从命令行读取）=====
   PetscInt baseNx = 4, baseNy = 4, baseNz = 4, baseNt = 4;
   // 固定四组网格级别：N = 4, 6, 8, 10（对应 Nx=Ny=Nz）
-  const std::vector<PetscInt> gridLevels = {4, 8, 16};
+  const std::vector<PetscInt> gridLevels = {4, 6, 8};
   PetscReal nu = 1;       // 动力粘度
   PetscReal tfinal = 0.5; // 最终时间
   PetscReal xmin = 0.0, xmax = 1.0;
@@ -137,32 +137,22 @@ int main(int argc, char **argv) {
                                         PetscScalar z,
                                         PetscScalar t) -> PetscScalar {
     auto pi = M_PI;
-    return 2 * pi * cos(2 * pi * (t + x + y)) - cos(2 * pi * z) -
-           sin(2 * pi * x) *
-               (2 * pi * cos(2 * pi * x) * (t - 1) +
-                2 * pi * sin(2 * pi * z) * (t - 2)) *
-               (t - 1) -
-           4 * pi * pi * cos(2 * pi * z) * (t - 2) +
-           2 * pi * cos(2 * pi * x) * sin(2 * pi * x) * (t - 1) * (t - 1);
+    return 2 * pi * cos(2 * pi * (t + x + y)) +
+           4 * pi * pi * 2 * cos(2 * pi * z) +
+           2 * pi * cos(2 * pi * x) * sin(2 * pi * x);
   };
   ExternalForce::ForceFunc fy_func = [](PetscScalar x, PetscScalar y,
                                         PetscScalar z,
                                         PetscScalar t) -> PetscScalar {
     auto pi = M_PI;
-    return sin(2 * pi * z) + 2 * pi * cos(2 * pi * (t + x + y)) +
-           4 * pi * pi * sin(2 * pi * z) * (t + 1) -
-           2 * pi * cos(2 * pi * z) * sin(2 * pi * x) * (t - 1) * (t + 1);
+    return 2 * pi * cos(2 * pi * (t + x + y)) +
+           4 * pi * pi * 2 * sin(2 * pi * z);
   };
   ExternalForce::ForceFunc fz_func = [](PetscScalar x, PetscScalar y,
                                         PetscScalar z,
                                         PetscScalar t) -> PetscScalar {
     auto pi = M_PI;
-    return cos(2 * pi * z) *
-               (2 * pi * cos(2 * pi * x) * (t - 1) +
-                2 * pi * sin(2 * pi * z) * (t - 2)) *
-               (t - 2) -
-           sin(2 * pi * x) - 4 * pi * pi * sin(2 * pi * x) * (t - 1) -
-           2 * pi * cos(2 * pi * z) * sin(2 * pi * z) * (t - 2) * (t - 2);
+    return 4 * pi * pi * sin(2 * pi * x);
   };
   externalForce.setFx(fx_func);
   externalForce.setFy(fy_func);
@@ -190,12 +180,10 @@ int main(int argc, char **argv) {
     const PetscInt Ny = gridLevels[level];
     const PetscInt Nz = gridLevels[level];
     // 令 Nt 与 Nx 近似同比例增长，保持时间分辨率随网格加密同步提升
-    /*  const PetscInt Nt = PetscMax(
-         (PetscInt)1,
-         (PetscInt)std::lround((double)baseNt * ((double)Nx / (double)baseNx)));
-     */
-    const PetscInt Nt = 25;
-    // const PetscInt Nt = 5;
+    const PetscInt Nt = PetscMax(
+        (PetscInt)1,
+        (PetscInt)std::lround((double)baseNt * ((double)Nx / (double)baseNx)));
+
     PetscCall(PetscPrintf(
         PETSC_COMM_WORLD,
         "========================================\n"

@@ -1071,7 +1071,6 @@ PetscErrorCode DUAL_MAC::assemble_omega2_curl_matrix(PetscReal Re, DM dmSol_1,
   PetscScalar coeff = 1.0 / Re; // 1/Re 系数
   PetscPrintf(PETSC_COMM_WORLD, "assemble_omega2_curl_matrix: coeff: %g\n",
               coeff);
-  int as = 0;
   // 遍历所有单元
   for (PetscInt ez = startz; ez < startz + nz; ++ez) {
     for (PetscInt ey = starty; ey < starty + ny; ++ey) {

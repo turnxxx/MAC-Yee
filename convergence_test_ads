@@ -4,7 +4,7 @@ set -euo pipefail
 NP="${NP:-6}"
 BIN="/home/JTZ_DL/MAC-Yee/build/convergence_test"
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
-LOG="${LOG:-/home/JTZ_DL/MAC-Yee/convergence_test_${TIMESTAMP}.log}"
+LOG="${LOG:-/home/JTZ_DL/MAC-Yee/convergence_test_ads_${TIMESTAMP}.log}"
 MPI_LAUNCHER="/home/JTZ_DL/petsc-3.23.0/x86_64/bin/mpirun"
 
 # 三场嵌套分裂（外层 u/p，内层 u->v/w）：
@@ -39,9 +39,11 @@ MPI_LAUNCHER="/home/JTZ_DL/petsc-3.23.0/x86_64/bin/mpirun"
   -one_fieldsplit_u_pc_fieldsplit_type schur \
   -one_fieldsplit_u_pc_fieldsplit_schur_fact_type upper \
   -one_fieldsplit_u_fieldsplit_v_ksp_type preonly \
-  -one_fieldsplit_u_fieldsplit_v_pc_type lu \
+  -one_fieldsplit_u_fieldsplit_v_pc_type lu\
   -one_fieldsplit_u_fieldsplit_v_pc_factor_mat_solver_type mumps \
   -one_fieldsplit_u_fieldsplit_v_ksp_rtol 1e-2\
+  -one_fieldsplit_u_fieldsplit_v_ksp_max_it 30\
+  -one_fieldsplit_u_fieldsplit_v_ksp_monitor \
   -one_fieldsplit_u_fieldsplit_w_ksp_type fgmres \
   -one_fieldsplit_u_fieldsplit_w_pc_type jacobi \
   -one_fieldsplit_u_fieldsplit_w_ksp_rtol 1e-2 \
@@ -63,9 +65,9 @@ MPI_LAUNCHER="/home/JTZ_DL/petsc-3.23.0/x86_64/bin/mpirun"
   -two_fieldsplit_u_ksp_monitor \
   -two_fieldsplit_u_pc_fieldsplit_type schur \
   -two_fieldsplit_u_pc_fieldsplit_schur_fact_type upper \
-  -two_fieldsplit_u_fieldsplit_v_ksp_type preonly\
-  -two_fieldsplit_u_fieldsplit_v_pc_type lu \
- -two_fieldsplit_u_fieldsplit_v_pc_factor_mat_solver_type mumps \
+  -two_fieldsplit_u_fieldsplit_v_ksp_type fgmres\
+  -two_fieldsplit_u_fieldsplit_v_pc_type hypre \
+  -two_fieldsplit_u_fieldsplit_v_pc_hypre_type ads \
   -two_fieldsplit_u_fieldsplit_v_ksp_rtol 1e-2 \
   -two_fieldsplit_u_fieldsplit_v_ksp_atol 1e-3 \
   -two_fieldsplit_u_fieldsplit_v_ksp_max_it 100 \

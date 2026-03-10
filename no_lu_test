@@ -26,7 +26,7 @@ MPI_LAUNCHER="/home/JTZ_DL/petsc-3.23.0/x86_64/bin/mpirun"
   -one_ksp_type fgmres -one_pc_type fieldsplit \
   -one_pc_fieldsplit_type schur -one_pc_fieldsplit_schur_fact_type upper \
   -one_pc_fieldsplit_schur_precondition user \
-  -one_alpha 20000 \
+  -one_alpha 200000 \
   -one_ksp_monitor \
   -one_fieldsplit_p_ksp_type fgmres -one_fieldsplit_p_pc_type jacobi \
   -one_fieldsplit_p_ksp_rtol 1e-2 \

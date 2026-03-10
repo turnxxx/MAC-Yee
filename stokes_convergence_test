@@ -2,7 +2,7 @@
 set -euo pipefail
 
 NP="${NP:-6}"
-BIN="/home/JTZ_DL/MAC-Yee/build/convergence_test"
+BIN="/home/JTZ_DL/MAC-Yee/build/stokes_convergence_test"
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 LOG="${LOG:-/home/JTZ_DL/MAC-Yee/convergence_test_${TIMESTAMP}.log}"
 MPI_LAUNCHER="/home/JTZ_DL/petsc-3.23.0/x86_64/bin/mpirun"
@@ -31,10 +31,8 @@ MPI_LAUNCHER="/home/JTZ_DL/petsc-3.23.0/x86_64/bin/mpirun"
   -one_ksp_monitor \
   -one_fieldsplit_p_ksp_type fgmres -one_fieldsplit_p_pc_type jacobi \
   -one_fieldsplit_p_ksp_rtol 1e-2 \
-  -one_fieldsplit_p_ksp_max_it 100 \
   -one_fieldsplit_u_ksp_type fgmres -one_fieldsplit_u_pc_type fieldsplit \
   -one_fieldsplit_u_ksp_rtol 1e-2\
-   -one_fieldsplit_u_ksp_max_it 100\
   -one_fieldsplit_u_ksp_monitor \
   -one_fieldsplit_u_pc_fieldsplit_type schur \
   -one_fieldsplit_u_pc_fieldsplit_schur_fact_type upper \
@@ -42,10 +40,11 @@ MPI_LAUNCHER="/home/JTZ_DL/petsc-3.23.0/x86_64/bin/mpirun"
   -one_fieldsplit_u_fieldsplit_v_pc_type lu \
   -one_fieldsplit_u_fieldsplit_v_pc_factor_mat_solver_type mumps \
   -one_fieldsplit_u_fieldsplit_v_ksp_rtol 1e-2\
+  -one_fieldsplit_u_fieldsplit_v_ksp_monitor \
   -one_fieldsplit_u_fieldsplit_w_ksp_type fgmres \
   -one_fieldsplit_u_fieldsplit_w_pc_type jacobi \
   -one_fieldsplit_u_fieldsplit_w_ksp_rtol 1e-2 \
-  -one_fieldsplit_u_fieldsplit_w_ksp_max_it 100 \
+  -one_fieldsplit_u_fieldsplit_w_ksp_monitor \
   -one_ksp_rtol 1e-10 -one_ksp_atol 1e-16 -one_ksp_max_it 100 \
   -one_ksp_error_if_not_converged \
   \
@@ -56,10 +55,9 @@ MPI_LAUNCHER="/home/JTZ_DL/petsc-3.23.0/x86_64/bin/mpirun"
   -two_pc_fieldsplit_schur_precondition user \
   -two_fieldsplit_p_ksp_type fgmres -two_fieldsplit_p_pc_type jacobi \
   -two_fieldsplit_p_ksp_rtol 1e-2 \
-  -two_fieldsplit_p_ksp_max_it 100 \
+  -two_fieldsplit_p_ksp_monitor \
   -two_fieldsplit_u_ksp_type fgmres -two_fieldsplit_u_pc_type fieldsplit \
   -two_fieldsplit_u_ksp_rtol 1e-2 \
-  -two_fieldsplit_u_ksp_max_it 100 \
   -two_fieldsplit_u_ksp_monitor \
   -two_fieldsplit_u_pc_fieldsplit_type schur \
   -two_fieldsplit_u_pc_fieldsplit_schur_fact_type upper \
@@ -69,11 +67,12 @@ MPI_LAUNCHER="/home/JTZ_DL/petsc-3.23.0/x86_64/bin/mpirun"
   -two_fieldsplit_u_fieldsplit_v_ksp_rtol 1e-2 \
   -two_fieldsplit_u_fieldsplit_v_ksp_atol 1e-3 \
   -two_fieldsplit_u_fieldsplit_v_ksp_max_it 100 \
+  -two_fieldsplit_u_fieldsplit_v_ksp_monitor \
   -two_fieldsplit_u_fieldsplit_w_ksp_type fgmres \
   -two_fieldsplit_u_fieldsplit_w_pc_type jacobi \
   -two_fieldsplit_u_fieldsplit_w_ksp_rtol 1e-2 \
   -two_fieldsplit_u_fieldsplit_w_ksp_atol 1e-3 \
-  -two_fieldsplit_u_fieldsplit_w_ksp_max_it 100 \
+  -two_fieldsplit_u_fieldsplit_w_ksp_monitor \
   -two_use_graddiv true -two_graddiv_gamma 100 \
   -two_ksp_error_if_not_converged \
   \
