@@ -4,6 +4,6 @@
 #   CONVECTION=OFF ./quick_build       # 关闭对流项（求解 Stokes 方程）
 #   CONVECTION=ON  ./quick_build       # 显式开启对流项（求解 Navier-Stokes 方程）
 cmake -S /home/JTZ_DL/MAC-Yee -B /home/JTZ_DL/MAC-Yee/build \
-  -DDUAL_MAC_ENABLE_DEBUG_LOG=OFF \
+  -DDUAL_MAC_ENABLE_DEBUG_LOG="${DEBUG:-OFF}" \
   -DDUAL_MAC_ENABLE_CONVECTION="${CONVECTION:-ON}"
-cmake --build /home/JTZ_DL/MAC-Yee/build -j
+cmake --build /home/JTZ_DL/MAC-Yee/build -j6

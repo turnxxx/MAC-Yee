@@ -2,6 +2,8 @@
 #include "../include/DUAL_MAC.h"
 #include "../include/ref_sol.h"
 #include "petscdmstag.h"
+#include "petscerror.h"
+#include "petscsys.h"
 #include "petscsystypes.h"
 #include <petsc.h>
 // 1形式系统矩阵组装
@@ -20,7 +22,7 @@ PetscErrorCode DUAL_MAC::assemble_1form_system_matrix(
   // 计算雷诺数（假设 nu 是动力粘度，Re = 1/nu）
   // 如果 nu 已经是雷诺数的倒数，则 Re = 1/nu
   PetscReal Re = 1.0 / this->nu;
-
+  PetscCall(PetscPrintf(PETSC_COMM_WORLD, "Re on 1 form: %g\n", (double)Re));
   // ===== 1. 初始化矩阵和右端项 =====
   PetscCall(MatZeroEntries(A));
   PetscCall(VecZeroEntries(rhs));
@@ -82,7 +84,7 @@ PetscErrorCode DUAL_MAC::assemble_1form_system_matrix(
   // 对应方程(5.4)中的 R₁ f^k
   // 外力项直接添加到右端项向量中
   DUAL_MAC_DEBUG_LOG("[DEBUG] [1-form] 外力项组装开始\n");
-  PetscCall(assemble_force1_vector(dmSol_1, rhs, externalForce, time));
+  PetscCall(assemble_robust_force1_vector(dmSol_1, rhs, externalForce, time));
   DUAL_MAC_DEBUG_LOG("[DEBUG] [1-form] 外力项组装完成\n");
 
   // ===== 10. 矩阵和向量最终组装 =====
@@ -445,9 +447,121 @@ PetscErrorCode DUAL_MAC::assemble_rhs1_vector(DM dmSol_1, Vec rhs, Vec u1_prev,
 
   PetscFunctionReturn(PETSC_SUCCESS);
 }
-// 组装2形式robust外力项
-PetscErrorCode DUAL_MAC::assemble_robust_force1_vector() {
+// 组装1形式 robust 外力项：R1(f)
+// 对每条棱的对应分量，使用沿棱切向的一维积分平均：
+//   (R1 f)_e = (1/|e|) * ∫_e (f · t_e) ds
+// 这里采用两点 Gauss-Legendre 公式，在线性坐标映射下对光滑函数为二阶精度。
+PetscErrorCode DUAL_MAC::assemble_robust_force1_vector(
+    DM dmSol_1, Vec rhs, ExternalForce externalForce, PetscReal time) {
   PetscFunctionBeginUser;
+
+  PetscInt startx, starty, startz, nx, ny, nz;
+  PetscCall(DMStagGetCorners(dmSol_1, &startx, &starty, &startz, &nx, &ny, &nz,
+                             NULL, NULL, NULL));
+
+  PetscScalar **cArrX, **cArrY, **cArrZ;
+  PetscCall(
+      DMStagGetProductCoordinateArraysRead(dmSol_1, &cArrX, &cArrY, &cArrZ));
+
+  PetscInt icx_prev, icy_prev, icz_prev;
+  PetscCall(DMStagGetProductCoordinateLocationSlot(dmSol_1, LEFT, &icx_prev));
+  PetscCall(DMStagGetProductCoordinateLocationSlot(dmSol_1, LEFT, &icy_prev));
+  PetscCall(DMStagGetProductCoordinateLocationSlot(dmSol_1, LEFT, &icz_prev));
+
+  const PetscReal invSqrt3 = 1.0 / PetscSqrtReal(3.0);
+  auto edge_avg = [invSqrt3](const ExternalForce::ForceFunc &f, PetscScalar a,
+                             PetscScalar b, PetscScalar x, PetscScalar y,
+                             PetscScalar z, PetscScalar t,
+                             int axis) -> PetscScalar {
+    const PetscReal len = PetscAbsReal(PetscRealPart(b - a));
+    if (len <= 0.0)
+      return 0.0;
+    const PetscScalar mid = 0.5 * (a + b);
+    const PetscScalar half = 0.5 * (b - a);
+    PetscScalar x1 = x, y1 = y, z1 = z;
+    PetscScalar x2 = x, y2 = y, z2 = z;
+    if (axis == 0) {
+      x1 = mid - half * invSqrt3;
+      x2 = mid + half * invSqrt3;
+    } else if (axis == 1) {
+      y1 = mid - half * invSqrt3;
+      y2 = mid + half * invSqrt3;
+    } else {
+      z1 = mid - half * invSqrt3;
+      z2 = mid + half * invSqrt3;
+    }
+    // 平均值 = (1/|e|)∫_e f ds，2点高斯下简化为 0.5*(f(q1)+f(q2))
+    return 0.5 * (f(x1, y1, z1, t) + f(x2, y2, z2, t));
+  };
+  const ExternalForce::ForceFunc fx_eval =
+      [&externalForce](PetscScalar x, PetscScalar y, PetscScalar z,
+                       PetscScalar t) -> PetscScalar {
+    return externalForce.fx(x, y, z, t);
+  };
+  const ExternalForce::ForceFunc fy_eval =
+      [&externalForce](PetscScalar x, PetscScalar y, PetscScalar z,
+                       PetscScalar t) -> PetscScalar {
+    return externalForce.fy(x, y, z, t);
+  };
+  const ExternalForce::ForceFunc fz_eval =
+      [&externalForce](PetscScalar x, PetscScalar y, PetscScalar z,
+                       PetscScalar t) -> PetscScalar {
+    return externalForce.fz(x, y, z, t);
+  };
+
+  for (PetscInt ez = startz; ez < startz + nz; ++ez) {
+    for (PetscInt ey = starty; ey < starty + ny; ++ey) {
+      for (PetscInt ex = startx; ex < startx + nx; ++ex) {
+        DMStagStencil row;
+        row.i = ex;
+        row.j = ey;
+        row.k = ez;
+        row.c = 0;
+
+        // x-棱：固定 y=z=prev，沿 x 积分平均 fx
+        {
+          row.loc = BACK_DOWN;
+          const PetscScalar xL = cArrX[ex][icx_prev];
+          const PetscScalar xR = cArrX[ex + 1][icx_prev];
+          const PetscScalar y0 = cArrY[ey][icy_prev];
+          const PetscScalar z0 = cArrZ[ez][icz_prev];
+          const PetscScalar fAvg =
+              edge_avg(fx_eval, xL, xR, 0.0, y0, z0, time, 0);
+          PetscCall(DMStagVecSetValuesStencil(dmSol_1, rhs, 1, &row, &fAvg,
+                                              ADD_VALUES));
+        }
+
+        // y-棱：固定 x=z=prev，沿 y 积分平均 fy
+        {
+          row.loc = BACK_LEFT;
+          const PetscScalar yD = cArrY[ey][icy_prev];
+          const PetscScalar yU = cArrY[ey + 1][icy_prev];
+          const PetscScalar x0 = cArrX[ex][icx_prev];
+          const PetscScalar z0 = cArrZ[ez][icz_prev];
+          const PetscScalar fAvg =
+              edge_avg(fy_eval, yD, yU, x0, 0.0, z0, time, 1);
+          PetscCall(DMStagVecSetValuesStencil(dmSol_1, rhs, 1, &row, &fAvg,
+                                              ADD_VALUES));
+        }
+
+        // z-棱：固定 x=y=prev，沿 z 积分平均 fz
+        {
+          row.loc = DOWN_LEFT;
+          const PetscScalar zB = cArrZ[ez][icz_prev];
+          const PetscScalar zF = cArrZ[ez + 1][icz_prev];
+          const PetscScalar x0 = cArrX[ex][icx_prev];
+          const PetscScalar y0 = cArrY[ey][icy_prev];
+          const PetscScalar fAvg =
+              edge_avg(fz_eval, zB, zF, x0, y0, 0.0, time, 2);
+          PetscCall(DMStagVecSetValuesStencil(dmSol_1, rhs, 1, &row, &fAvg,
+                                              ADD_VALUES));
+        }
+      }
+    }
+  }
+
+  PetscCall(DMStagRestoreProductCoordinateArraysRead(dmSol_1, &cArrX, &cArrY,
+                                                     &cArrZ));
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 // 组装2形式外力项
@@ -456,93 +570,7 @@ PetscErrorCode DUAL_MAC::assemble_force1_vector(DM dmSol_1, Vec rhs,
                                                 ExternalForce externalForce,
                                                 PetscReal time) {
   PetscFunctionBeginUser;
-  PetscInt startx, starty, startz, nx, ny, nz;
-  PetscCall(DMStagGetCorners(dmSol_1, &startx, &starty, &startz, &nx, &ny, &nz,
-                             NULL, NULL, NULL));
-
-  // 获取 product 坐标数组
-  PetscScalar **cArrX, **cArrY, **cArrZ;
-  PetscCall(
-      DMStagGetProductCoordinateArraysRead(dmSol_1, &cArrX, &cArrY, &cArrZ));
-
-  // 获取坐标的 slot 索引
-  // 对于每个方向（x, y, z），需要获取不同位置的坐标slot
-  PetscInt icx_center, icx_prev, icy_center, icy_prev, icz_center, icz_prev;
-  PetscCall(DMStagGetProductCoordinateLocationSlot(
-      dmSol_1, ELEMENT, &icx_center)); // x坐标在单元中心
-  PetscCall(DMStagGetProductCoordinateLocationSlot(dmSol_1, LEFT,
-                                                   &icx_prev)); // x坐标在左面
-  PetscCall(DMStagGetProductCoordinateLocationSlot(
-      dmSol_1, ELEMENT, &icy_center)); // y坐标在单元中心
-  PetscCall(DMStagGetProductCoordinateLocationSlot(dmSol_1, LEFT,
-                                                   &icy_prev)); // y坐标在下面
-  PetscCall(DMStagGetProductCoordinateLocationSlot(
-      dmSol_1, ELEMENT, &icz_center)); // z坐标在单元中心
-  PetscCall(DMStagGetProductCoordinateLocationSlot(dmSol_1, LEFT,
-                                                   &icz_prev)); // z坐标在后面
-
-  // 遍历所有单元
-  for (PetscInt ez = startz; ez < startz + nz; ++ez) {
-    for (PetscInt ey = starty; ey < starty + ny; ++ey) {
-      for (PetscInt ex = startx; ex < startx + nx; ++ex) {
-
-        // ===== x 方向棱 (BACK_DOWN) 的外力项 =====
-        // x 方向棱沿 x 方向延伸，位于后面(z=prev)和下面(y=prev)的交线
-        // x 坐标在单元中心，y 坐标在单元底部，z 坐标在单元后面
-        DMStagStencil row;
-        row.i = ex;
-        row.j = ey;
-        row.k = ez;
-        row.loc = BACK_DOWN; // x方向棱
-        row.c = 0;
-
-        // 获取坐标：x 在单元中心，y 和 z 在 prev 位置
-        PetscScalar x = cArrX[ex][icx_center];
-        PetscScalar y = cArrY[ey][icy_prev];
-        PetscScalar z = cArrZ[ez][icz_prev];
-
-        // 调用 x 方向的外力函数
-        PetscScalar force_val = externalForce.fx(x, y, z, time);
-        PetscCall(DMStagVecSetValuesStencil(dmSol_1, rhs, 1, &row, &force_val,
-                                            ADD_VALUES));
-
-        // ===== y 方向棱 (BACK_LEFT) 的外力项 =====
-        // y 方向棱沿 y 方向延伸，位于后面(z=prev)和左面(x=prev)的交线
-        // x 坐标在单元左面，y 坐标在单元中心，z 坐标在单元后面
-        row.loc = BACK_LEFT; // y方向棱
-
-        // 获取坐标：y 在单元中心，x 和 z 在 prev 位置
-        x = cArrX[ex][icx_prev];
-        y = cArrY[ey][icy_center];
-        z = cArrZ[ez][icz_prev];
-
-        // 调用 y 方向的外力函数
-        force_val = externalForce.fy(x, y, z, time);
-        PetscCall(DMStagVecSetValuesStencil(dmSol_1, rhs, 1, &row, &force_val,
-                                            ADD_VALUES));
-
-        // ===== z 方向棱 (DOWN_LEFT) 的外力项 =====
-        // z 方向棱沿 z 方向延伸，位于下面(y=prev)和左面(x=prev)的交线
-        // x 坐标在单元左面，y 坐标在单元底部，z 坐标在单元中心
-        row.loc = DOWN_LEFT; // z方向棱
-
-        // 获取坐标：z 在单元中心，x 和 y 在 prev 位置
-        x = cArrX[ex][icx_prev];
-        y = cArrY[ey][icy_prev];
-        z = cArrZ[ez][icz_center];
-
-        // 调用 z 方向的外力函数
-        force_val = externalForce.fz(x, y, z, time);
-        PetscCall(DMStagVecSetValuesStencil(dmSol_1, rhs, 1, &row, &force_val,
-                                            ADD_VALUES));
-      }
-    }
-  }
-
-  // 释放坐标数组
-  PetscCall(DMStagRestoreProductCoordinateArraysRead(dmSol_1, &cArrX, &cArrY,
-                                                     &cArrZ));
-
+  PetscCall(assemble_robust_force1_vector(dmSol_1, rhs, externalForce, time));
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 // 组装u1时间矩阵

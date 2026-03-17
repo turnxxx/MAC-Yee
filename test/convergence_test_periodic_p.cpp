@@ -34,13 +34,13 @@ int main(int argc, char **argv) {
   // ===== 2. 设置参数（可从命令行读取）=====
   PetscInt baseNx = 4, baseNy = 4, baseNz = 4, baseNt = 4;
   // 固定四组网格级别：N = 4, 6, 8, 10（对应 Nx=Ny=Nz）
-  const std::vector<PetscInt> gridLevels = {4, 6, 8};
-  PetscReal nu = 1;       // 动力粘度
-  PetscReal tfinal = 0.5; // 最终时间
+  const std::vector<PetscInt> gridLevels = {4, 6, 8, 10};
+  PetscReal nu = 1;        // 动力粘度
+  PetscReal tfinal = 0.25; // 最终时间
   PetscReal xmin = 0.0, xmax = 1.0;
   PetscReal ymin = 0.0, ymax = 1.0;
   PetscReal zmin = 0.0, zmax = 1.0;
-  PetscBool pinPressure = PETSC_TRUE;
+  PetscBool pinPressure = PETSC_FALSE;
   PetscReal stabAlpha = 1000.0, stabGamma = 1000.0;
 
   PetscCall(PetscOptionsGetInt(NULL, NULL, "-nx", &baseNx, NULL));
@@ -102,20 +102,17 @@ int main(int argc, char **argv) {
   RefSol::ScalarFunc p_func = [](PetscScalar x, PetscScalar y, PetscScalar z,
                                  PetscScalar t) -> PetscScalar {
     auto pi = M_PI;
-    return sin(2 * pi * (t + x + y)) +
-           (cos(2 * pi * z) * cos(2 * pi * z) * (t - 2) * (t - 2)) / 2 +
-           (sin(2 * pi * x) * sin(2 * pi * x) * (t - 1) * (t - 1)) / 2 +
-           (sin(2 * pi * z) * sin(2 * pi * z) * (t + 1) * (t + 1)) / 2 -
+    return sin(2 * pi * x) * sin(2 * pi * y) +
+           ((2.0 - t) * std::cos(2 * M_PI * z) * (2.0 - t) *
+                std::cos(2 * M_PI * z) +
+            (1.0 + t) * std::sin(2 * M_PI * z) * (1.0 + t) *
+                std::sin(2 * M_PI * z) +
+            (1.0 - t) * std::sin(2 * M_PI * x) * (1.0 - t) *
+                std::sin(2 * M_PI * x)) /
+               2 -
            ((3 * t * t) / 4 - t + 1.5);
   };
-  // 示例2：自定义函数（取消注释并修改）
-  // RefSol::ScalarFunc ux_func = std::function<PetscScalar(PetscScalar,
-  // PetscScalar, PetscScalar, PetscScalar)>(
-  //     +[](PetscScalar x, PetscScalar y, PetscScalar z, PetscScalar t) ->
-  //     PetscScalar {
-  //         return sin(x) * cos(y) * exp(-t);  // 你的自定义函数表达式
-  //     }
-  // );
+
   refSol.setUxRef(ux_func);
   refSol.setUyRef(uy_func);
   refSol.setUzRef(uz_func);
@@ -137,22 +134,34 @@ int main(int argc, char **argv) {
                                         PetscScalar z,
                                         PetscScalar t) -> PetscScalar {
     auto pi = M_PI;
-    return 2 * pi * cos(2 * pi * (t + x + y)) +
-           4 * pi * pi * 2 * cos(2 * pi * z) +
-           2 * pi * cos(2 * pi * x) * sin(2 * pi * x);
+    return 2 * pi * cos(2 * pi * x) * sin(2 * pi * y) -
+           sin(2 * pi * x) *
+               (2 * pi * cos(2 * pi * x) * (t - 1) +
+                2 * pi * sin(2 * pi * z) * (t - 2)) *
+               (t - 1) -
+           cos(2 * pi * z) +
+           2 * pi * cos(2 * pi * x) * sin(2 * pi * x) * (t - 1) * (t - 1) -
+           4 * pi * pi * cos(2 * pi * z) * (t - 2);
   };
   ExternalForce::ForceFunc fy_func = [](PetscScalar x, PetscScalar y,
                                         PetscScalar z,
                                         PetscScalar t) -> PetscScalar {
     auto pi = M_PI;
-    return 2 * pi * cos(2 * pi * (t + x + y)) +
-           4 * pi * pi * 2 * sin(2 * pi * z);
+    return sin(2 * pi * z) + 2 * pi * cos(2 * pi * y) * sin(2 * pi * x) +
+           4 * pi * pi * sin(2 * pi * z) * (t + 1) -
+           2 * pi * cos(2 * pi * z) * sin(2 * pi * x) * (t - 1) * (t + 1);
   };
   ExternalForce::ForceFunc fz_func = [](PetscScalar x, PetscScalar y,
                                         PetscScalar z,
                                         PetscScalar t) -> PetscScalar {
     auto pi = M_PI;
-    return 4 * pi * pi * sin(2 * pi * x);
+    return cos(2 * pi * z) *
+               (2 * pi * cos(2 * pi * x) * (t - 1) +
+                2 * pi * sin(2 * pi * z) * (t - 2)) *
+               (t - 2) -
+           sin(2 * pi * x) -
+           2 * pi * cos(2 * pi * z) * sin(2 * pi * z) * (t - 2) * (t - 2) -
+           4 * pi * pi * sin(2 * pi * x) * (t - 1);
   };
   externalForce.setFx(fx_func);
   externalForce.setFy(fy_func);
@@ -184,7 +193,8 @@ int main(int argc, char **argv) {
          (PetscInt)1,
          (PetscInt)std::lround((double)baseNt * ((double)Nx / (double)baseNx)));
      */
-    const PetscInt Nt = 30;
+    const PetscInt Nt = 25;
+    // const PetscInt Nt = 5;
     PetscCall(PetscPrintf(
         PETSC_COMM_WORLD,
         "========================================\n"

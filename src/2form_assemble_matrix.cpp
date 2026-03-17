@@ -19,7 +19,7 @@ PetscErrorCode DUAL_MAC::assemble_2form_system_matrix(
 
   // 计算雷诺数（假设 nu 是动力粘度，Re = 1/nu）
   PetscReal Re = 1.0 / this->nu;
-
+  PetscCall(PetscPrintf(PETSC_COMM_WORLD, "Re on 2 form: %g\n", (double)Re));
   // ===== 1. 初始化矩阵和右端项 =====
   PetscCall(MatZeroEntries(A));
   PetscCall(VecZeroEntries(rhs));
@@ -81,7 +81,7 @@ PetscErrorCode DUAL_MAC::assemble_2form_system_matrix(
   // 对应方程(5.1)中的 I_{RT} f^{k-1/2}
   // 外力项直接添加到右端项向量中
   DUAL_MAC_DEBUG_LOG("[DEBUG] [2-form] 外力项组装开始\n");
-  PetscCall(assemble_force2_vector(dmSol_2, rhs, externalForce, time));
+  PetscCall(assemble_robust_force2_vector(dmSol_2, rhs, externalForce, time));
   DUAL_MAC_DEBUG_LOG("[DEBUG] [2-form] 外力项组装完成\n");
 
   // ===== 10. 矩阵和向量最终组装 =====
@@ -1470,5 +1470,149 @@ PetscErrorCode DUAL_MAC::assemble_force2_vector(DM dmSol_2, Vec rhs,
   PetscCall(DMStagRestoreProductCoordinateArraysRead(dmSol_2, &cArrX, &cArrY,
                                                      &cArrZ));
 
+  PetscFunctionReturn(PETSC_SUCCESS);
+}
+
+// 组装 Pressure-robust 外力项向量（RT0 投影）
+// 对每个面自由度 a_0，取 a_0 两侧单元 T1、T2 上最低阶 RT 基函数 p_0，
+// 计算 F = ∫_{T1∪T2} f·p_0 dV，投影值 = F / h^3。
+// 积分用 2×2×2 Gauss-Legendre 求积。
+PetscErrorCode DUAL_MAC::assemble_robust_force2_vector(
+    DM dmSol_2, Vec rhs, ExternalForce externalForce, PetscReal time) {
+  PetscFunctionBeginUser;
+
+  PetscInt startx, starty, startz, nx, ny, nz;
+  PetscCall(DMStagGetCorners(dmSol_2, &startx, &starty, &startz, &nx, &ny, &nz,
+                             NULL, NULL, NULL));
+
+  PetscScalar **cArrX, **cArrY, **cArrZ;
+  PetscCall(
+      DMStagGetProductCoordinateArraysRead(dmSol_2, &cArrX, &cArrY, &cArrZ));
+
+  PetscInt icx_prev, icy_prev, icz_prev;
+  PetscCall(DMStagGetProductCoordinateLocationSlot(dmSol_2, LEFT, &icx_prev));
+  PetscCall(DMStagGetProductCoordinateLocationSlot(dmSol_2, LEFT, &icy_prev));
+  PetscCall(DMStagGetProductCoordinateLocationSlot(dmSol_2, LEFT, &icz_prev));
+
+  const PetscReal hx = this->dx;
+  const PetscReal hy = this->dy;
+  const PetscReal hz = this->dz;
+
+  // 参考单元 [0,1] 上的 2 点 Gauss-Legendre 求积点
+  const PetscReal invSqrt3 = 1.0 / PetscSqrtReal(3.0);
+  const PetscReal xi_q[2] = {(1.0 - invSqrt3) / 2.0, (1.0 + invSqrt3) / 2.0};
+
+  // RT0 基函数在 Gauss 点上的值：
+  //   φ_own(ξ) = 1 - ξ  （本面侧），φ_opp(ξ) = ξ （对面侧）
+  // 预计算：wP = φ_own(ξ_q[0]) = φ_opp(ξ_q[1]), wM = φ_own(ξ_q[1]) =
+  // φ_opp(ξ_q[0])
+  const PetscReal wP = (1.0 + invSqrt3) / 2.0;
+  const PetscReal wM = (1.0 - invSqrt3) / 2.0;
+
+  // 按单元遍历，向两侧面累加贡献
+  // 每个 Gauss 点的 (求积权重 / h^3) = (h/2·h/2·h/2) / (h·h·h) = 1/8
+  for (PetscInt ez = startz; ez < startz + nz; ++ez) {
+    for (PetscInt ey = starty; ey < starty + ny; ++ey) {
+      for (PetscInt ex = startx; ex < startx + nx; ++ex) {
+
+        const PetscReal xL = cArrX[ex][icx_prev];
+        const PetscReal yD = cArrY[ey][icy_prev];
+        const PetscReal zB = cArrZ[ez][icz_prev];
+
+        const PetscReal x_q[2] = {xL + xi_q[0] * hx, xL + xi_q[1] * hx};
+        const PetscReal y_q[2] = {yD + xi_q[0] * hy, yD + xi_q[1] * hy};
+        const PetscReal z_q[2] = {zB + xi_q[0] * hz, zB + xi_q[1] * hz};
+
+        PetscScalar fxv[2][2][2], fyv[2][2][2], fzv[2][2][2];
+        for (int i = 0; i < 2; ++i)
+          for (int j = 0; j < 2; ++j)
+            for (int k = 0; k < 2; ++k) {
+              fxv[i][j][k] = externalForce.fx(x_q[i], y_q[j], z_q[k], time);
+              fyv[i][j][k] = externalForce.fy(x_q[i], y_q[j], z_q[k], time);
+              fzv[i][j][k] = externalForce.fz(x_q[i], y_q[j], z_q[k], time);
+            }
+
+        // ===== x 方向面 (LEFT / RIGHT) =====
+        // LEFT  of (ex  ): φ = (1-ξ) → q[0]->wP, q[1]->wM
+        // LEFT  of (ex+1): φ = ξ     → q[0]->wM, q[1]->wP
+        {
+          PetscScalar v_left = 0.0, v_right = 0.0;
+          for (int j = 0; j < 2; ++j)
+            for (int k = 0; k < 2; ++k) {
+              v_left += fxv[0][j][k] * wP + fxv[1][j][k] * wM;
+              v_right += fxv[0][j][k] * wM + fxv[1][j][k] * wP;
+            }
+          v_left /= 8.0;
+          v_right /= 8.0;
+
+          DMStagStencil row;
+          row.j = ey;
+          row.k = ez;
+          row.c = 0;
+          row.loc = LEFT;
+
+          row.i = ex;
+          PetscCall(DMStagVecSetValuesStencil(dmSol_2, rhs, 1, &row, &v_left,
+                                              ADD_VALUES));
+          row.i = ex + 1;
+          PetscCall(DMStagVecSetValuesStencil(dmSol_2, rhs, 1, &row, &v_right,
+                                              ADD_VALUES));
+        }
+
+        // ===== y 方向面 (DOWN / UP) =====
+        {
+          PetscScalar v_down = 0.0, v_up = 0.0;
+          for (int i = 0; i < 2; ++i)
+            for (int k = 0; k < 2; ++k) {
+              v_down += fyv[i][0][k] * wP + fyv[i][1][k] * wM;
+              v_up += fyv[i][0][k] * wM + fyv[i][1][k] * wP;
+            }
+          v_down /= 8.0;
+          v_up /= 8.0;
+
+          DMStagStencil row;
+          row.i = ex;
+          row.k = ez;
+          row.c = 0;
+          row.loc = DOWN;
+
+          row.j = ey;
+          PetscCall(DMStagVecSetValuesStencil(dmSol_2, rhs, 1, &row, &v_down,
+                                              ADD_VALUES));
+          row.j = ey + 1;
+          PetscCall(DMStagVecSetValuesStencil(dmSol_2, rhs, 1, &row, &v_up,
+                                              ADD_VALUES));
+        }
+
+        // ===== z 方向面 (BACK / FRONT) =====
+        {
+          PetscScalar v_back = 0.0, v_front = 0.0;
+          for (int i = 0; i < 2; ++i)
+            for (int j = 0; j < 2; ++j) {
+              v_back += fzv[i][j][0] * wP + fzv[i][j][1] * wM;
+              v_front += fzv[i][j][0] * wM + fzv[i][j][1] * wP;
+            }
+          v_back /= 8.0;
+          v_front /= 8.0;
+
+          DMStagStencil row;
+          row.i = ex;
+          row.j = ey;
+          row.c = 0;
+          row.loc = BACK;
+
+          row.k = ez;
+          PetscCall(DMStagVecSetValuesStencil(dmSol_2, rhs, 1, &row, &v_back,
+                                              ADD_VALUES));
+          row.k = ez + 1;
+          PetscCall(DMStagVecSetValuesStencil(dmSol_2, rhs, 1, &row, &v_front,
+                                              ADD_VALUES));
+        }
+      }
+    }
+  }
+
+  PetscCall(DMStagRestoreProductCoordinateArraysRead(dmSol_2, &cArrX, &cArrY,
+                                                     &cArrZ));
   PetscFunctionReturn(PETSC_SUCCESS);
 }

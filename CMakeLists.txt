@@ -113,3 +113,93 @@ endif()
 if(NOT DUAL_MAC_ENABLE_CONVECTION)
     target_compile_definitions(stokes_convergence_test PRIVATE DUAL_MAC_ENABLE_CONVECTION=0)
 endif()
+
+add_executable(convergence_test_periodic_p
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/convergence_test_periodic_p.cpp
+    ${TEST_SRC}
+)
+target_include_directories(convergence_test_periodic_p PRIVATE
+    ${HEAD_PATH}
+)
+target_link_libraries(convergence_test_periodic_p PRIVATE ${PETSC_DIR}/${PETSC_ARCH}/lib/libpetsc.so)
+if(DUAL_MAC_ENABLE_DEBUG_LOG)
+    target_compile_definitions(convergence_test_periodic_p PRIVATE DUAL_MAC_DEBUG=1)
+endif()
+if(NOT DUAL_MAC_ENABLE_CONVECTION)
+    target_compile_definitions(convergence_test_periodic_p PRIVATE DUAL_MAC_ENABLE_CONVECTION=0)
+endif()
+
+add_executable(convergence_test_CFL
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/convergence_test_CFL.cpp
+    ${TEST_SRC}
+)
+target_include_directories(convergence_test_CFL PRIVATE
+    ${HEAD_PATH}
+)
+target_link_libraries(convergence_test_CFL PRIVATE ${PETSC_DIR}/${PETSC_ARCH}/lib/libpetsc.so)
+if(DUAL_MAC_ENABLE_DEBUG_LOG)
+    target_compile_definitions(convergence_test_CFL PRIVATE DUAL_MAC_DEBUG=1)
+endif()
+if(NOT DUAL_MAC_ENABLE_CONVECTION)
+    target_compile_definitions(convergence_test_CFL PRIVATE DUAL_MAC_ENABLE_CONVECTION=0)
+endif()
+
+add_executable(Reynold_test
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/Reynold_test.cpp
+    ${TEST_SRC}
+)
+target_include_directories(Reynold_test PRIVATE
+    ${HEAD_PATH}
+)
+target_link_libraries(Reynold_test PRIVATE ${PETSC_DIR}/${PETSC_ARCH}/lib/libpetsc.so)
+if(DUAL_MAC_ENABLE_DEBUG_LOG)
+    target_compile_definitions(Reynold_test PRIVATE DUAL_MAC_DEBUG=1)
+endif()
+if(NOT DUAL_MAC_ENABLE_CONVECTION)
+    target_compile_definitions(Reynold_test PRIVATE DUAL_MAC_ENABLE_CONVECTION=0)
+endif()
+
+add_executable(Pressure_test
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/Pressure_test.cpp
+    ${TEST_SRC}
+)
+target_include_directories(Pressure_test PRIVATE
+    ${HEAD_PATH}
+)
+target_link_libraries(Pressure_test PRIVATE ${PETSC_DIR}/${PETSC_ARCH}/lib/libpetsc.so)
+if(DUAL_MAC_ENABLE_DEBUG_LOG)
+    target_compile_definitions(Pressure_test PRIVATE DUAL_MAC_DEBUG=1)
+endif()
+if(NOT DUAL_MAC_ENABLE_CONVECTION)
+    target_compile_definitions(Pressure_test PRIVATE DUAL_MAC_ENABLE_CONVECTION=0)
+endif()
+
+add_executable(Reynold_test2
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/Reynold_test2.cpp
+    ${TEST_SRC}
+)
+target_include_directories(Reynold_test2 PRIVATE
+    ${HEAD_PATH}
+)
+target_link_libraries(Reynold_test2 PRIVATE ${PETSC_DIR}/${PETSC_ARCH}/lib/libpetsc.so)
+if(DUAL_MAC_ENABLE_DEBUG_LOG)
+    target_compile_definitions(Reynold_test2 PRIVATE DUAL_MAC_DEBUG=1)
+endif()
+if(NOT DUAL_MAC_ENABLE_CONVECTION)
+    target_compile_definitions(Reynold_test2 PRIVATE DUAL_MAC_ENABLE_CONVECTION=0)
+endif()
+
+add_executable(Pressure_test2
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/Pressure_test2.cpp
+    ${TEST_SRC}
+)
+target_include_directories(Pressure_test2 PRIVATE
+    ${HEAD_PATH}
+)
+target_link_libraries(Pressure_test2 PRIVATE ${PETSC_DIR}/${PETSC_ARCH}/lib/libpetsc.so)
+if(DUAL_MAC_ENABLE_DEBUG_LOG)
+    target_compile_definitions(Pressure_test2 PRIVATE DUAL_MAC_DEBUG=1)
+endif()
+if(NOT DUAL_MAC_ENABLE_CONVECTION)
+    target_compile_definitions(Pressure_test2 PRIVATE DUAL_MAC_ENABLE_CONVECTION=0)
+endif()

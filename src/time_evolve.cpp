@@ -12,6 +12,7 @@
 #include "petscviewer.h"
 #include "petscviewerhdf5.h"
 #include <cstring>
+#include <vector>
 //#include"petscviewerascii.h"
 
 // omega2 = ∇_h × u1  (edge→face)
@@ -167,6 +168,123 @@ static PetscErrorCode solve_linear_system_with_switch(
                                         attachPressureNullspace, dt,
                                         alphaExternal, gammaExternal));
   }
+  PetscFunctionReturn(PETSC_SUCCESS);
+}
+
+// one_ 子步压力诊断：
+// 比较“去掉 p0 后的动量残差”与“p0 梯度贡献”的平衡程度。
+static PetscErrorCode diagnose_oneform_pressure_balance(Mat A, Vec rhs, Vec sol,
+                                                        DM dmSol_1,
+                                                        PetscReal time) {
+  PetscFunctionBeginUser;
+  PetscInt dof0, dof1, dof2, dof3;
+  PetscCall(DMStagGetDOF(dmSol_1, &dof0, &dof1, &dof2, &dof3));
+  if (!(dof0 > 0 && dof1 > 0))
+    PetscFunctionReturn(PETSC_SUCCESS);
+
+  Vec solNoP = NULL, localNoP = NULL;
+  PetscScalar ****arrNoP = NULL;
+  Vec rFull = NULL, rNoP = NULL, gradEff = NULL, sumVec = NULL;
+  IS isUMomentum = NULL;
+  Vec rFullU = NULL, rNoPU = NULL, gradU = NULL, sumU = NULL;
+
+  PetscCall(VecDuplicate(sol, &solNoP));
+  PetscCall(VecCopy(sol, solNoP));
+
+  PetscCall(DMGetLocalVector(dmSol_1, &localNoP));
+  PetscCall(DMGlobalToLocal(dmSol_1, solNoP, INSERT_VALUES, localNoP));
+  PetscCall(DMStagVecGetArray(dmSol_1, localNoP, &arrNoP));
+  PetscInt sx, sy, sz, nx, ny, nz;
+  PetscCall(
+      DMStagGetCorners(dmSol_1, &sx, &sy, &sz, &nx, &ny, &nz, NULL, NULL, NULL));
+  PetscInt slotP0;
+  PetscCall(DMStagGetLocationSlot(dmSol_1, BACK_DOWN_LEFT, 0, &slotP0));
+  for (PetscInt ez = sz; ez < sz + nz; ++ez)
+    for (PetscInt ey = sy; ey < sy + ny; ++ey)
+      for (PetscInt ex = sx; ex < sx + nx; ++ex)
+        arrNoP[ez][ey][ex][slotP0] = 0.0;
+  PetscCall(DMStagVecRestoreArray(dmSol_1, localNoP, &arrNoP));
+  PetscCall(DMLocalToGlobal(dmSol_1, localNoP, INSERT_VALUES, solNoP));
+  PetscCall(DMRestoreLocalVector(dmSol_1, &localNoP));
+
+  PetscCall(VecDuplicate(rhs, &rFull));
+  PetscCall(VecDuplicate(rhs, &rNoP));
+  PetscCall(VecDuplicate(rhs, &gradEff));
+  PetscCall(VecDuplicate(rhs, &sumVec));
+
+  PetscCall(MatMult(A, sol, rFull));
+  PetscCall(VecAXPY(rFull, -1.0, rhs));
+  PetscCall(MatMult(A, solNoP, rNoP));
+  PetscCall(VecAXPY(rNoP, -1.0, rhs));
+
+  // gradEff = A*(sol-solNoP) ; sumVec = rNoP + gradEff
+  PetscCall(VecCopy(rFull, gradEff));
+  PetscCall(VecAXPY(gradEff, -1.0, rNoP));
+  PetscCall(VecCopy(rNoP, sumVec));
+  PetscCall(VecAXPY(sumVec, 1.0, gradEff));
+
+  // 构造 one_ 动量方程（u1 三分量）对应的行索引集。
+  std::vector<DMStagStencil> stU;
+  stU.reserve((size_t)nx * (size_t)ny * (size_t)nz * 3);
+  for (PetscInt ez = sz; ez < sz + nz; ++ez) {
+    for (PetscInt ey = sy; ey < sy + ny; ++ey) {
+      for (PetscInt ex = sx; ex < sx + nx; ++ex) {
+        DMStagStencil s;
+        s.i = ex;
+        s.j = ey;
+        s.k = ez;
+        s.c = 0;
+        s.loc = BACK_DOWN;
+        stU.push_back(s);
+        s.loc = BACK_LEFT;
+        stU.push_back(s);
+        s.loc = DOWN_LEFT;
+        stU.push_back(s);
+      }
+    }
+  }
+  PetscCall(DMStagCreateISFromStencils(dmSol_1, (PetscInt)stU.size(), stU.data(),
+                                       &isUMomentum));
+
+  PetscCall(VecGetSubVector(rFull, isUMomentum, &rFullU));
+  PetscCall(VecGetSubVector(rNoP, isUMomentum, &rNoPU));
+  PetscCall(VecGetSubVector(gradEff, isUMomentum, &gradU));
+  PetscCall(VecGetSubVector(sumVec, isUMomentum, &sumU));
+
+  PetscReal nFull2 = 0.0, nNoP2 = 0.0, nGrad2 = 0.0, nBal2 = 0.0;
+  PetscReal nFullInf = 0.0, nNoPInf = 0.0, nGradInf = 0.0, nBalInf = 0.0;
+  PetscCall(VecNorm(rFullU, NORM_2, &nFull2));
+  PetscCall(VecNorm(rNoPU, NORM_2, &nNoP2));
+  PetscCall(VecNorm(gradU, NORM_2, &nGrad2));
+  PetscCall(VecNorm(sumU, NORM_2, &nBal2));
+  PetscCall(VecNorm(rFullU, NORM_INFINITY, &nFullInf));
+  PetscCall(VecNorm(rNoPU, NORM_INFINITY, &nNoPInf));
+  PetscCall(VecNorm(gradU, NORM_INFINITY, &nGradInf));
+  PetscCall(VecNorm(sumU, NORM_INFINITY, &nBalInf));
+
+  const PetscReal relBal =
+      nBal2 / (nNoP2 + nGrad2 + (PetscReal)1.0e-30);
+  PetscCall(PetscPrintf(
+      PETSC_COMM_WORLD,
+      "[Diag][one_ pressure balance] t=%.6f\n"
+      "  ||R_full||_u2=%.12e, ||R_no_p||_u2=%.12e, ||G(p0)||_u2=%.12e\n"
+      "  ||R_no_p + G||_u2=%.12e, rel=%.12e\n"
+      "  ||R_full||_uinf=%.12e, ||R_no_p||_uinf=%.12e, "
+      "||G(p0)||_uinf=%.12e, ||R_no_p+G||_uinf=%.12e\n",
+      (double)time, (double)nFull2, (double)nNoP2, (double)nGrad2,
+      (double)nBal2, (double)relBal, (double)nFullInf, (double)nNoPInf,
+      (double)nGradInf, (double)nBalInf));
+
+  PetscCall(VecRestoreSubVector(rFull, isUMomentum, &rFullU));
+  PetscCall(VecRestoreSubVector(rNoP, isUMomentum, &rNoPU));
+  PetscCall(VecRestoreSubVector(gradEff, isUMomentum, &gradU));
+  PetscCall(VecRestoreSubVector(sumVec, isUMomentum, &sumU));
+  PetscCall(ISDestroy(&isUMomentum));
+  PetscCall(VecDestroy(&sumVec));
+  PetscCall(VecDestroy(&gradEff));
+  PetscCall(VecDestroy(&rNoP));
+  PetscCall(VecDestroy(&rFull));
+  PetscCall(VecDestroy(&solNoP));
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
@@ -1315,6 +1433,7 @@ PetscErrorCode DUAL_MAC::time_evolve1(DM dmSol_1, DM dmSol_2, Vec sol1_old,
       A, rhs, sol1_new, dmSol_1, "one_", this->pinPressure, this->dt,
       this->stab_alpha, this->stab_gamma));
   DUAL_MAC_DEBUG_LOG("[DEBUG] 1-form 子步线性求解完成\n");
+  PetscCall(diagnose_oneform_pressure_balance(A, rhs, sol1_new, dmSol_1, time));
 
   // 4. 释放资源
   PetscCall(MatDestroy(&A));
@@ -1591,9 +1710,9 @@ PetscErrorCode DUAL_MAC::solve(RefSol refSol, ExternalForce externalForce) {
                                            current_time, debugCellVolume));
 #endif
 
-    // 7.4 更新旧解为新解，准备下一次迭代
-    PetscCall(VecCopy(sol1_new, sol1_old));
-    PetscCall(VecCopy(sol2_new, sol2_old));
+    // 7.4 交换新旧解缓冲区，准备下一次迭代（避免整向量拷贝）
+    PetscCall(VecSwap(sol1_old, sol1_new));
+    PetscCall(VecSwap(sol2_old, sol2_new));
     DUAL_MAC_DEBUG_LOG("[DEBUG] 时间步 %d 完成\n", (int)k);
 
     // 可选：输出中间结果或计算误差

@@ -3,7 +3,7 @@ set -euo pipefail
 
 MPI_LAUNCHER="/home/JTZ_DL/petsc-3.23.0/x86_64/bin/mpirun"
 
-"${MPI_LAUNCHER}" -np 4 /home/JTZ_DL/MAC-Yee/build/convergence_test \
+"${MPI_LAUNCHER}" -np 6 /home/JTZ_DL/MAC-Yee/build/convergence_test \
   -one_ksp_type preonly -one_pc_type lu \
   -one_pc_factor_shift_type NONZERO \
   -one_pc_factor_shift_amount 1e-12 \

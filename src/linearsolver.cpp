@@ -996,8 +996,8 @@ static PetscErrorCode configure_fieldsplit_subksp_defaults(
           Mat Pv = NULL;
           PetscCall(build_velocity_schur_precond_mat(A, dm, &Pv));
           if (Pv) {
-            PetscCall(PCFieldSplitSetSchurPre(subpc,
-                                              PC_FIELDSPLIT_SCHUR_PRE_USER, Pv));
+            PetscCall(PCFieldSplitSetSchurPre(
+                subpc, PC_FIELDSPLIT_SCHUR_PRE_USER, Pv));
             PetscCall(MatDestroy(&Pv));
           }
         }
@@ -1433,14 +1433,15 @@ PetscErrorCode solve_linear_system_basic(Mat A, Vec rhs, Vec sol, DM dm,
   // 求解线性系统
   PetscCall(KSPSolve(ksp, rhs, sol));
 
-  // two_ 子问题残差诊断：
+  // 子问题残差诊断：
   // 1) 全局残差 ||Ax-b||/||b||
-  // 2) div 约束块（ELEMENT 行）残差 L2/Linf
+  // 2) div 约束块残差 L2/Linf（two_: ELEMENT, one_: BACK_DOWN_LEFT）
   const PetscBool isTwoSystem = isTwoSystemForSchur;
-  if (isTwoSystem) {
+  {
     Vec r = NULL, localR = NULL;
     PetscScalar ****arrR = NULL;
     PetscReal rhsNorm = 0.0, rNorm = 0.0, relNorm = 0.0;
+    const char *systemTag = isTwoSystem ? "two" : "one";
 
     PetscCall(VecDuplicate(rhs, &r));
     PetscCall(MatMult(Aop, sol, r));
@@ -1450,43 +1451,49 @@ PetscErrorCode solve_linear_system_basic(Mat A, Vec rhs, Vec sol, DM dm,
     relNorm = (rhsNorm > 0.0) ? (rNorm / rhsNorm) : rNorm;
 
     PetscCall(PetscPrintf(PETSC_COMM_WORLD,
-                          "[DEBUG][LS two] residual: ||Ax-b||_2=%.12e, "
+                          "[DEBUG][LS %s] residual: ||Ax-b||_2=%.12e, "
                           "||b||_2=%.12e, rel=%.12e\n",
-                          (double)rNorm, (double)rhsNorm, (double)relNorm));
+                          systemTag, (double)rNorm, (double)rhsNorm,
+                          (double)relNorm));
 
-    if (dof3 > 0) {
-      PetscInt startx, starty, startz, nx, ny, nz, slotElem;
-      PetscReal localSqElem = 0.0, localMaxElem = 0.0;
-      PetscReal globalSqElem = 0.0, globalMaxElem = 0.0;
+    if ((isTwoSystem && dof3 > 0) || (!isTwoSystem && dof0 > 0)) {
+      PetscInt startx, starty, startz, nx, ny, nz, slotDiv;
+      PetscReal localSqDiv = 0.0, localMaxDiv = 0.0;
+      PetscReal globalSqDiv = 0.0, globalMaxDiv = 0.0;
+      const DMStagStencilLocation divLoc =
+          isTwoSystem ? ELEMENT : BACK_DOWN_LEFT;
+      const char *divLocTag = isTwoSystem ? "ELEMENT" : "BACK_DOWN_LEFT";
 
       PetscCall(DMGetLocalVector(dm, &localR));
       PetscCall(DMGlobalToLocal(dm, r, INSERT_VALUES, localR));
       PetscCall(DMStagVecGetArrayRead(dm, localR, &arrR));
       PetscCall(DMStagGetCorners(dm, &startx, &starty, &startz, &nx, &ny, &nz,
                                  NULL, NULL, NULL));
-      PetscCall(DMStagGetLocationSlot(dm, ELEMENT, 0, &slotElem));
+      PetscCall(DMStagGetLocationSlot(dm, divLoc, 0, &slotDiv));
 
       for (PetscInt ez = startz; ez < startz + nz; ++ez) {
         for (PetscInt ey = starty; ey < starty + ny; ++ey) {
           for (PetscInt ex = startx; ex < startx + nx; ++ex) {
             const PetscReal v =
-                PetscAbsReal(PetscRealPart(arrR[ez][ey][ex][slotElem]));
-            localSqElem += v * v;
-            if (v > localMaxElem)
-              localMaxElem = v;
+                PetscAbsReal(PetscRealPart(arrR[ez][ey][ex][slotDiv]));
+            localSqDiv += v * v;
+            if (v > localMaxDiv)
+              localMaxDiv = v;
           }
         }
       }
 
-      PetscCall(PMPI_Allreduce(&localSqElem, &globalSqElem, 1, MPIU_REAL,
+      PetscCall(PMPI_Allreduce(&localSqDiv, &globalSqDiv, 1, MPIU_REAL,
                                MPIU_SUM, PetscObjectComm((PetscObject)dm)));
-      PetscCall(PMPI_Allreduce(&localMaxElem, &globalMaxElem, 1, MPIU_REAL,
+      PetscCall(PMPI_Allreduce(&localMaxDiv, &globalMaxDiv, 1, MPIU_REAL,
                                MPIU_MAX, PetscObjectComm((PetscObject)dm)));
 
-      PetscCall(PetscPrintf(
-          PETSC_COMM_WORLD,
-          "[DEBUG][LS two] ELEMENT(div-row) residual: L2=%.12e, Linf=%.12e\n",
-          (double)PetscSqrtReal(globalSqElem), (double)globalMaxElem));
+      PetscCall(PetscPrintf(PETSC_COMM_WORLD,
+                            "[DEBUG][LS %s] %s(div-row) residual: "
+                            "L2=%.12e, Linf=%.12e\n",
+                            systemTag, divLocTag,
+                            (double)PetscSqrtReal(globalSqDiv),
+                            (double)globalMaxDiv));
 
       PetscCall(DMStagVecRestoreArrayRead(dm, localR, &arrR));
       PetscCall(DMRestoreLocalVector(dm, &localR));

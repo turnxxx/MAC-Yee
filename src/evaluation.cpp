@@ -44,6 +44,123 @@ PetscErrorCode GetCellVolumeFromDM(DM dmSol, PetscReal *cellVolume) {
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
+/**
+ * @brief 在 1-form 布局上检查离散恒等式 <grad p0, u1> + <p0, div u1> ~= 0。
+ *
+ * @param[in]  dmSol      1-form DM（dof0>0 且 dof1>0）。
+ * @param[in]  sol        解向量（包含 u1 与 p0）。
+ * @param[out] absDefect  绝对缺陷值 |a+b|。
+ * @param[out] relDefect  相对缺陷值 |a+b|/(|a|+|b|+eps)。
+ */
+PetscErrorCode CheckDivGradAdjointP0OnSolution(DM dmSol, Vec sol,
+                                               PetscReal *absDefect,
+                                               PetscReal *relDefect) {
+  PetscFunctionBeginUser;
+  if (absDefect)
+    *absDefect = 0.0;
+  if (relDefect)
+    *relDefect = 0.0;
+
+  PetscInt dof0, dof1, dof2, dof3;
+  PetscCall(DMStagGetDOF(dmSol, &dof0, &dof1, &dof2, &dof3));
+  if (!(dof0 > 0 && dof1 > 0)) {
+    PetscFunctionReturn(PETSC_SUCCESS);
+  }
+
+  PetscInt startx, starty, startz, nx, ny, nz;
+  PetscCall(DMStagGetCorners(dmSol, &startx, &starty, &startz, &nx, &ny, &nz,
+                             NULL, NULL, NULL));
+
+  PetscScalar **cArrX, **cArrY, **cArrZ;
+  PetscCall(
+      DMStagGetProductCoordinateArraysRead(dmSol, &cArrX, &cArrY, &cArrZ));
+  PetscInt icx_prev, icy_prev, icz_prev;
+  PetscCall(DMStagGetProductCoordinateLocationSlot(dmSol, LEFT, &icx_prev));
+  PetscCall(DMStagGetProductCoordinateLocationSlot(dmSol, LEFT, &icy_prev));
+  PetscCall(DMStagGetProductCoordinateLocationSlot(dmSol, LEFT, &icz_prev));
+
+  if (nx <= 0 || ny <= 0 || nz <= 0) {
+    PetscCall(DMStagRestoreProductCoordinateArraysRead(dmSol, &cArrX, &cArrY,
+                                                       &cArrZ));
+    PetscFunctionReturn(PETSC_SUCCESS);
+  }
+
+  const PetscReal hx =
+      PetscRealPart(cArrX[startx + 1][icx_prev] - cArrX[startx][icx_prev]);
+  const PetscReal hy =
+      PetscRealPart(cArrY[starty + 1][icy_prev] - cArrY[starty][icy_prev]);
+  const PetscReal hz =
+      PetscRealPart(cArrZ[startz + 1][icz_prev] - cArrZ[startz][icz_prev]);
+  const PetscReal cellVolume = hx * hy * hz;
+
+  Vec localSol;
+  PetscScalar ****arrSol;
+  PetscCall(DMGetLocalVector(dmSol, &localSol));
+  PetscCall(DMGlobalToLocal(dmSol, sol, INSERT_VALUES, localSol));
+  PetscCall(DMStagVecGetArrayRead(dmSol, localSol, &arrSol));
+
+  PetscInt slotP0, slotUx, slotUy, slotUz;
+  PetscCall(DMStagGetLocationSlot(dmSol, BACK_DOWN_LEFT, 0, &slotP0));
+  PetscCall(DMStagGetLocationSlot(dmSol, BACK_DOWN, 0, &slotUx));
+  PetscCall(DMStagGetLocationSlot(dmSol, BACK_LEFT, 0, &slotUy));
+  PetscCall(DMStagGetLocationSlot(dmSol, DOWN_LEFT, 0, &slotUz));
+
+  PetscReal localGradDotU = 0.0;
+  PetscReal localPDotDiv = 0.0;
+  for (PetscInt ez = startz; ez < startz + nz; ++ez) {
+    for (PetscInt ey = starty; ey < starty + ny; ++ey) {
+      for (PetscInt ex = startx; ex < startx + nx; ++ex) {
+        const PetscScalar pHere = arrSol[ez][ey][ex][slotP0];
+        const PetscScalar px = (arrSol[ez][ey][ex + 1][slotP0] - pHere) / hx;
+        const PetscScalar py = (arrSol[ez][ey + 1][ex][slotP0] - pHere) / hy;
+        const PetscScalar pz = (arrSol[ez + 1][ey][ex][slotP0] - pHere) / hz;
+
+        const PetscScalar ux = arrSol[ez][ey][ex][slotUx];
+        const PetscScalar uy = arrSol[ez][ey][ex][slotUy];
+        const PetscScalar uz = arrSol[ez][ey][ex][slotUz];
+
+        const PetscScalar divU = (ux - arrSol[ez][ey][ex - 1][slotUx]) / hx +
+                                 (uy - arrSol[ez][ey - 1][ex][slotUy]) / hy +
+                                 (uz - arrSol[ez - 1][ey][ex][slotUz]) / hz;
+
+        localGradDotU += PetscRealPart(
+            (px * PetscConj(ux) + py * PetscConj(uy) + pz * PetscConj(uz)) *
+            cellVolume);
+        localPDotDiv += PetscRealPart(pHere * PetscConj(divU) * cellVolume);
+      }
+    }
+  }
+
+  PetscReal globalGradDotU = 0.0;
+  PetscReal globalPDotDiv = 0.0;
+  PetscCall(PMPI_Allreduce(&localGradDotU, &globalGradDotU, 1, MPIU_REAL,
+                           MPIU_SUM, PetscObjectComm((PetscObject)dmSol)));
+  PetscCall(PMPI_Allreduce(&localPDotDiv, &globalPDotDiv, 1, MPIU_REAL,
+                           MPIU_SUM, PetscObjectComm((PetscObject)dmSol)));
+
+  const PetscReal absVal = PetscAbsReal(globalGradDotU + globalPDotDiv);
+  const PetscReal denom =
+      PetscAbsReal(globalGradDotU) + PetscAbsReal(globalPDotDiv) + 1e-30;
+  const PetscReal relVal = absVal / denom;
+  if (absDefect)
+    *absDefect = absVal;
+  if (relDefect)
+    *relDefect = relVal;
+
+  PetscCall(PetscPrintf(
+      PETSC_COMM_WORLD,
+      "[Diag][Adjoint p0] <grad p0,u1>=%.12e, <p0,div u1>=%.12e, abs=%.12e, "
+      "rel=%.12e\n",
+      (double)globalGradDotU, (double)globalPDotDiv, (double)absVal,
+      (double)relVal));
+
+  PetscCall(DMStagVecRestoreArrayRead(dmSol, localSol, &arrSol));
+  PetscCall(DMRestoreLocalVector(dmSol, &localSol));
+  PetscCall(
+      DMStagRestoreProductCoordinateArraysRead(dmSol, &cArrX, &cArrY, &cArrZ));
+  PetscFunctionReturn(PETSC_SUCCESS);
+}
+
 PetscErrorCode ComputeInvariantSums(DM dmSol1, Vec sol1, DM dmSol2, Vec sol2,
                                     PetscReal *sumH1, PetscReal *sumH2,
                                     PetscReal *sumK1, PetscReal *sumK2,
@@ -427,6 +544,17 @@ PetscErrorCode Evaluation::compute_error(DM dmSol, Vec sol, RefSol refSol,
   PetscCall(compute_error_p(dmSol, sol, refSol, time_p, gridScale, &err_p));
   PetscCall(
       compute_error_grad_p(dmSol, sol, refSol, time_p, gridScale, &err_grad_p));
+
+  // 可选离散算子诊断：检查 1-form 上 div/grad 的离散伴随关系。
+  PetscBool checkAdjoint = PETSC_FALSE, hasCheckAdjoint = PETSC_FALSE;
+  PetscCall(PetscOptionsGetBool(NULL, NULL, "-eval_check_divgrad_adjoint",
+                                &checkAdjoint, &hasCheckAdjoint));
+  if (hasCheckAdjoint && checkAdjoint) {
+    PetscReal absDefect = 0.0, relDefect = 0.0;
+    PetscCall(
+        CheckDivGradAdjointP0OnSolution(dmSol, sol, &absDefect, &relDefect));
+  }
+
   if (result) {
     result->err_u = err_u;
     result->err_omega = err_omega;

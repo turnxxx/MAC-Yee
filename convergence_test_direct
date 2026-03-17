@@ -2,9 +2,9 @@
 set -euo pipefail
 
 NP="${NP:-6}"
-BIN="/home/JTZ_DL/MAC-Yee/build/convergence_test"
+BIN="/home/JTZ_DL/MAC-Yee/build/Pressure_test2"
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
-LOG="${LOG:-/home/JTZ_DL/MAC-Yee/convergence_test_direct_${TIMESTAMP}.log}"
+LOG="${LOG:-/home/JTZ_DL/MAC-Yee/Pressure_test2_direct_${TIMESTAMP}.log}"
 MPI_LAUNCHER="/home/JTZ_DL/petsc-3.23.0/x86_64/bin/mpirun"
 
 # ─── 直接法求解（LU 分解） ───
@@ -44,6 +44,7 @@ if [ "${SOLVER}" = "mumps" ]; then
     -mat_mumps_icntl_14 80
     -mat_mumps_icntl_24 1
     -mat_mumps_icntl_7  5
+    -mat_mumps_icntl_4  3
   )
 fi
 
@@ -57,24 +58,32 @@ if [ "${SOLVER}" = "superlu_dist" ]; then
   )
 fi
 
-"${MPI_LAUNCHER}" -np "${NP}" "${BIN}" \
+"${MPI_LAUNCHER}" -np "${NP}" "${BIN}" -eval_check_divgrad_adjoint \
   \
   -one_ksp_type preonly \
   -one_pc_type lu \
   -one_pc_factor_mat_solver_type "${SOLVER}" \
   -one_alpha 0 \
-  \
+  -one_ksp_monitor_true_residual \
+  -one_ksp_converged_reason \
+  -one_ksp_error_if_not_converged \
   -two_ksp_type preonly \
   -two_pc_type lu \
   -two_pc_factor_mat_solver_type "${SOLVER}" \
   -two_use_graddiv false -two_graddiv_gamma 0 \
-  \
+  -two_ksp_monitor_true_residual \
+  -two_ksp_converged_reason \
+  -two_ksp_error_if_not_converged \
   -half_ksp_type preonly \
   -half_pc_type lu \
   -half_pc_factor_mat_solver_type "${SOLVER}" \
-  \
+  -half_ksp_monitor_true_residual \
+  -half_ksp_converged_reason \
+  -half_ksp_error_if_not_converged \
+  -ksp_converged_reason \
+  -ksp_error_if_not_converged \
   "${MUMPS_OPTS[@]}" \
   "${SLU_OPTS[@]}" \
   "$@" > "${LOG}" 2>&1
 
-echo "preserving_test_direct finished. solver=${SOLVER}, np=${NP}, log=${LOG}" >> "${LOG}" 2>&1
+echo "convergence_test_direct finished. solver=${SOLVER}, np=${NP}, log=${LOG}" >> "${LOG}" 2>&1
